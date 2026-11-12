@@ -1,4 +1,4 @@
-name: Generate Custom Key
+name: Build Signed SSYouTube Release APK
 
 on:
   push:
@@ -6,17 +6,50 @@ on:
   workflow_dispatch:
 
 jobs:
-  make-key:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Generate Encrypted Keystore
-        run: |
-          keytool -genkeypair -v -keystore ssyoutube.jks -keyalg RSA -keysize 2048 -validity 10000 -alias ssyoutube -storepass Sunil1234 -keypass Sunil1234 -dname "CN=Sunil Sonu, O=SSYouTube, C=IN"
-          openssl enc -aes-256-cbc -pbkdf2 -salt -in ssyoutube.jks -out ssyoutube.jks.enc -pass pass:Sunil1234
 
-      - name: Upload Encrypted Key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Ensure SSYouTube Name
+        run: |
+          sed -i 's/ScreenHeader(title = "YTXTube"/ScreenHeader(title = "SSYouTube"/g' app/src/main/java/com/tensei/ytxtube/Screens.kt
+          sed -i 's/<string name="app_name">YTXTube<\/string>/<string name="app_name">SSYouTube<\/string>/g' app/src/main/res/values/strings.xml
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Sign Release APK with Custom Key
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 -in ssyoutube.jks.enc -out keystore.jks -pass pass:Sunil1234
+          INPUT_APK=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          $BUILD_TOOLS/zipalign -p -f -v 4 "$INPUT_APK" aligned.apk
+          $BUILD_TOOLS/apksigner sign --ks keystore.jks \
+            --ks-key-alias "ssyoutube" \
+            --ks-pass "pass:Sunil1234" \
+            --key-pass "pass:Sunil1234" \
+            --out SSYouTube-Release.apk aligned.apk
+
+      - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: SSYouTube-Key
-          path: ssyoutube.jks.enc
+          name: SSYouTube-Release-APK
+          path: SSYouTube-Release.apk
           
