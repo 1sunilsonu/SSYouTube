@@ -284,9 +284,9 @@ fun SettingsScreen(
                         subtitle = I18n.t("open_source_sub", "View source code on GitHub"),
                         onClick = { openRepo(ytxRepo) },
                     )
-                    val telegram = "https://t.me/getthefckoutofheree"
+                    val telegram = "https://t.me/sunilsonuphotography"
                     val openTelegram: () -> Unit = {
-                        val app = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=getthefckoutofheree"))
+                        val app = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=sunilsonuphotography"))
                         val web = Intent(Intent.ACTION_VIEW, Uri.parse(telegram))
                         runCatching { context.startActivity(app) }
                             .onFailure { runCatching { context.startActivity(web) } }
@@ -294,7 +294,7 @@ fun SettingsScreen(
                     SettingsRow(
                         icon = Icons.Rounded.Person,
                         title = I18n.t("developer", "Developer"),
-                        subtitle = "@getthefckoutofheree",
+                        subtitle = "Sunil Sonu",
                         onClick = openTelegram,
                     )
                 }
