@@ -277,13 +277,7 @@ fun SettingsScreen(
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                         }
                     }
-                    val ytxRepo = "https://github.com/Koustubh12345/YTXTube"
-                    SettingsRow(
-                        icon = Icons.Rounded.Code,
-                        title = I18n.t("open_source", "Open Source"),
-                        subtitle = I18n.t("open_source_sub", "View source code on GitHub"),
-                        onClick = { openRepo(ytxRepo) },
-                    )
+                    
                     val telegram = "https://t.me/sunilsonuphotography"
                     val openTelegram: () -> Unit = {
                         val app = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=sunilsonuphotography"))
