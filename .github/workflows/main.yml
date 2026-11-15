@@ -18,6 +18,30 @@ jobs:
           sed -i 's/ScreenHeader(title = "YTXTube"/ScreenHeader(title = "SSYouTube"/g' app/src/main/java/com/tensei/ytxtube/Screens.kt
           sed -i 's/<string name="app_name">YTXTube<\/string>/<string name="app_name">SSYouTube<\/string>/g' app/src/main/res/values/strings.xml
 
+      - name: Apply Custom App Icon
+        run: |
+          ICON_FILE=$(ls custom_icon.png custom_icon.jpg custom_icon.jpeg 2>/dev/null | head -n 1)
+          if [ -n "$ICON_FILE" ]; then
+            python3 -c "import PIL" 2>/dev/null || pip install --break-system-packages Pillow || (sudo apt-get update && sudo apt-get install -y python3-pil)
+            rm -rf app/src/main/res/mipmap-anydpi*
+            rm -rf app/src/main/res/mipmap-*v26*
+            python3 -c "
+          from PIL import Image
+          import os, glob
+          img = Image.open('$ICON_FILE').convert('RGBA')
+          sizes = {'mdpi': 48, 'hdpi': 72, 'xhdpi': 96, 'xxhdpi': 144, 'xxxhdpi': 192}
+          for density, px in sizes.items():
+              folder = f'app/src/main/res/mipmap-{density}'
+              os.makedirs(folder, exist_ok=True)
+              for old in glob.glob(f'{folder}/ic_launcher*'):
+                  try: os.remove(old)
+                  except: pass
+              resized = img.resize((px, px), Image.Resampling.LANCZOS)
+              resized.save(f'{folder}/ic_launcher.png', 'PNG')
+              resized.save(f'{folder}/ic_launcher_round.png', 'PNG')
+          "
+          fi
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
