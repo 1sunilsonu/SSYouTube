@@ -277,11 +277,28 @@ class PlayerState(private val scope: CoroutineScope) {
 
     private var openedAt = 0L
 
-    private fun show(item: VideoItem, startPlayback: Boolean) {
+    
+        private fun show(item: VideoItem, startPlayback: Boolean) {
         endHoldSpeed()
+        loadJob?.cancel()
+        if (startPlayback) {
+            swapping = true
+            try {
+                controller?.pause()
+                controller?.stop()
+                controller?.clearMediaItems()
+            } finally {
+                swapping = false
+            }
+            isPlaying = false
+            isBuffering = true
+            positionMs = 0L
+            bufferedMs = 0L
+            durationMs = 0L
+            Net.prewarmMediaConnection()
+        }
         openedAt = android.os.SystemClock.elapsedRealtime()
         Log.i("YTXTubeTime", "open ${item.id}")
-        if (startPlayback) Net.prewarmMediaConnection()
         current = item
         if (isMusicMode) RecentMusic.record(item)
         details = null
@@ -303,7 +320,6 @@ class PlayerState(private val scope: CoroutineScope) {
         videoZoom = 1f
         portraitFullscreen = false
         if (item.localUri != null) {
-
             details = VideoDetails(
                 item = item,
                 description = "",
@@ -327,36 +343,54 @@ class PlayerState(private val scope: CoroutineScope) {
                     .onFailure { Log.w(TAG, "account state for ${item.id}", it) }
             }
         }
-        loadJob?.cancel()
         loadJob = scope.launch {
-            runCatching { YouTube.details(item.id) }
-                .onSuccess { d ->
-                    Log.i("YTXTubeTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
-                    details = d
-                    refreshTracks()
+            var lastErr: Throwable? = null
+            var loaded: VideoDetails? = null
+            for (attempt in 1..3) {
+                val res = runCatching { YouTube.details(item.id) }
+                val d = res.getOrNull()
+                if (d != null) {
+                    loaded = d
+                    break
+                }
+                lastErr = res.exceptionOrNull()
+                if (lastErr is kotlinx.coroutines.CancellationException) throw lastErr
+                if (attempt < 3) {
+                    StreamCache.invalidate(item.id)
+                    Net.prewarmMediaConnection()
+                    delay(250L * attempt)
+                }
+            }
+            if (loaded != null) {
+                val d = loaded
+                Log.i("YTXTubeTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
+                details = d
+                refreshTracks()
 
-                    if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
+                if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
 
+                comments.load(item.id)
+                known[item.id] = d.item
+                d.related.forEach { known[it.id] = it }
+                if (!d.playable) {
+                    isBuffering = false
+                    error = "No playable stream was found for this video."
+                } else if (startPlayback) {
+                    startPlayback(d.item)
+                }
 
-                    comments.load(item.id)
-                    known[item.id] = d.item
-                    d.related.forEach { known[it.id] = it }
-                    if (!d.playable) error = "No playable stream was found for this video."
-                    else if (startPlayback) startPlayback(d.item)
-
-                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        val dislikes = fetchDislikeCount(item.id)
-                        if (current?.id == item.id && dislikes >= 0) {
-                            details = details?.copy(dislikes = dislikes)
-                        }
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val dislikes = fetchDislikeCount(item.id)
+                    if (current?.id == item.id && dislikes >= 0) {
+                        details = details?.copy(dislikes = dislikes)
                     }
                 }
-                .onFailure {
-                    Log.w(TAG, "details failed for ${item.id}", it)
-                    error = YouTube.friendlyError(it)
-
-                    comments.load(item.id)
-                }
+            } else {
+                isBuffering = false
+                Log.w(TAG, "details failed for ${item.id}", lastErr)
+                error = YouTube.friendlyError(lastErr ?: Exception("Network connection issue"))
+                comments.load(item.id)
+            }
             loading = false
         }
     }
@@ -378,8 +412,6 @@ class PlayerState(private val scope: CoroutineScope) {
             .setMediaMetadata(metadata)
             .apply {
                 if (localUri != null) {
-
-
                     setRequestMetadata(
                         MediaItem.RequestMetadata.Builder().setMediaUri(localUri.toUri()).build(),
                     )
@@ -390,36 +422,23 @@ class PlayerState(private val scope: CoroutineScope) {
 
     private fun startPlayback(item: VideoItem) {
         val player = controller ?: run { pendingStart = item; return }
-
         replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
         player.play()
         if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage)
         refreshTracks()
     }
 
-    
-
-
-
-
     private fun replaceCurrent(player: MediaController, item: VideoItem, positionMs: Long) {
-        if (player.mediaItemCount == 0) {
+        swapping = true
+        try {
+            player.stop()
             player.setMediaItem(mediaItemFor(item), positionMs)
-        } else {
-
-
-            swapping = true
-            try {
-                val index = player.currentMediaItemIndex
-                player.addMediaItem(index + 1, mediaItemFor(item))
-                player.seekTo(index + 1, positionMs)
-                player.removeMediaItem(index)
-            } finally {
-                swapping = false
-            }
+        } finally {
+            swapping = false
         }
         player.prepare()
     }
+    
 
 
     fun playNext(item: VideoItem) {
