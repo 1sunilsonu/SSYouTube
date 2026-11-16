@@ -138,6 +138,7 @@ object Downloads {
         }
 
     private lateinit var dir: File
+    private var appContext: Context? = null
     private lateinit var prefs: android.content.SharedPreferences
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
@@ -156,6 +157,7 @@ object Downloads {
 
     fun init(context: Context) {
         if (initialized) return
+        appContext = context.applicationContext8
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val customPath = prefs.getString(KEY_CUSTOM_DIR, null)
         val targetDir = if (!customPath.isNullOrBlank()) {
@@ -465,6 +467,7 @@ object Downloads {
             task.total = target.length()
             task.downloaded = task.total
             task.status = DownloadStatus.Complete
+            appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(target.absolutePath), null, null) }
             return
         }
 
@@ -538,6 +541,7 @@ object Downloads {
 
         task.error = null
         task.status = DownloadStatus.Complete
+        appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(target.absolutePath), null, null) }
         persist()
         Log.i(TAG, "download ${task.key} complete: ${task.file.length()} bytes")
     }
@@ -589,12 +593,70 @@ object Downloads {
         }
     }
 
-    private suspend fun transfer(
+        private suspend fun transfer(
         url: String,
         file: File,
         remote: Remote,
         onProgress: (Long) -> Unit,
     ): Long {
+        if (remote.ranges && remote.total > 512 * 1024L) {
+            RandomAccessFile(file, "rw").use { it.setLength(remote.total) }
+            val parts = 6
+            val chunkSize = (remote.total + parts - 1L) / parts
+            val fileLock = Any()
+            val totalWritten = AtomicLong(0L)
+            coroutineScope {
+                (0 until parts).map { idx ->
+                    val start = idx * chunkSize
+                    val end = min(remote.total - 1L, (idx + 1) * chunkSize - 1L)
+                    async(Dispatchers.IO) {
+                        if (start > end) return@async
+                        var pos = start
+                        var attempts = 0
+                        val buf = ByteArray(64 * 1024)
+                        while (pos <= end) {
+                            try {
+                                val req = Request.Builder()
+                                    .url(withRange(url, pos, end))
+                                    .header("Range", "bytes=$pos-$end")
+                                    .header("User-Agent", Net.USER_AGENT)
+                                    .header("Referer", "https://www.youtube.com/")
+                                    .build()
+                                Net.client.newCall(req).execute().use { res ->
+                                    if (res.code != 200 && res.code != 206) {
+                                        throw HttpStatusException(res.code)
+                                    }
+                                    val src = res.body?.source() ?: throw IOException("Empty response body")
+                                    if (res.code == 200 && pos > start) pos = start
+                                    while (pos <= end) {
+                                        val maxRead = min(buf.size.toLong(), end - pos + 1L).toInt()
+                                        val read = src.read(buf, 0, maxRead)
+                                        if (read <= 0) break
+                                        synchronized(fileLock) {
+                                            RandomAccessFile(file, "rw").use { raf ->
+                                                raf.seek(pos)
+                                                raf.write(buf, 0, read)
+                                            }
+                                        }
+                                        pos += read
+                                        totalWritten.addAndGet(read.toLong())
+                                        onProgress(read.toLong())
+                                    }
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (t: Throwable) {
+                                attempts++
+                                if (attempts >= 5) throw t
+                                kotlinx.coroutines.delay(400L * attempts)
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+            return totalWritten.get()
+        }
+
         var downloaded = if (file.exists()) file.length() else 0L
         if (remote.total > 0 && downloaded >= remote.total) return downloaded
 
@@ -608,11 +670,9 @@ object Downloads {
                     .url(url)
                     .header("User-Agent", Net.USER_AGENT)
                     .header("Referer", "https://www.youtube.com/")
-
                 if (downloaded > 0) {
                     reqBuilder.header("Range", "bytes=$downloaded-")
                 }
-
                 Net.client.newCall(reqBuilder.build()).execute().use { response ->
                     if (response.code != 200 && response.code != 206) {
                         throw HttpStatusException(response.code)
@@ -620,7 +680,6 @@ object Downloads {
                     val body = response.body ?: throw IOException("Empty response body")
                     val isPartial = response.code == 206
                     val source = body.source()
-
                     RandomAccessFile(file, "rw").use { raf ->
                         if (isPartial && downloaded > 0) {
                             raf.seek(downloaded)
@@ -629,7 +688,6 @@ object Downloads {
                             raf.setLength(0)
                             downloaded = 0L
                         }
-
                         while (true) {
                             val read = source.read(buffer)
                             if (read <= 0) break
@@ -640,28 +698,20 @@ object Downloads {
                         }
                     }
                 }
-
-                if (remote.total <= 0 || downloaded >= remote.total) {
-                    break
-                }
+                if (remote.total <= 0 || downloaded >= remote.total) break
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
                 attempts++
-                Log.w(TAG, "Download interrupted at $downloaded/${remote.total}, attempt $attempts of $maxAttempts", t)
                 if (attempts >= maxAttempts) {
                     throw IOException("Download failed at $downloaded of ${remote.total} bytes: ${t.message}", t)
                 }
                 kotlinx.coroutines.delay(1000L * attempts)
             }
         }
-
-        if (remote.total > 0 && downloaded < remote.total) {
-            throw IOException("Incomplete download: received $downloaded of ${remote.total} bytes")
-        }
         return downloaded
-    }
-
+        }
+        
     private fun withRange(url: String, start: Long, end: Long): String {
         val parsed = url.toHttpUrlOrNull() ?: return url
         return parsed.newBuilder()
@@ -753,20 +803,18 @@ object Downloads {
         return null
     }
 
-
-
-    private fun fileNameFor(video: VideoItem, height: Int, container: String = "mp4", hdr: Boolean = false): String {
+        private fun fileNameFor(video: VideoItem, height: Int, container: String = "mp4", hdr: Boolean = false): String {
         val safe = video.title
             .replace(Regex("[\\\\/:*?\"<>|\\n\\r\\t]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
             .take(64)
             .ifBlank { video.id }
-        if (height == 0) return "$safe [Audio] ${video.id}.m4a"
+        if (height == 0) return "$safe - SSYouTube.mp3"
         val hdrTag = if (hdr) " HDR" else ""
         val extension = if (container == "webm") "webm" else "mp4"
-        return "$safe [${height}p$hdrTag] ${video.id}.$extension"
-    }
+        return "$safe [${height}p$hdrTag] - SSYouTube.$extension"
+        }  
 
     private fun workFile(task: DownloadTask, kind: String): File =
         File(dir, "${task.videoId}_${task.height}_$kind.part")
