@@ -1,5 +1,8 @@
 package com.tensei.ytxtube
 
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
