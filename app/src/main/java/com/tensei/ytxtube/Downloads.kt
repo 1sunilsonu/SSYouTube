@@ -1025,9 +1025,14 @@ object Downloads {
         File(dir, "${task.videoId}_${task.height}_$kind.part")
 
     private fun deleteWork(task: DownloadTask) {
-        workFile(task, "video").delete()
-        workFile(task, "audio").delete()
+    val v = workFile(task, "video")
+    val a = workFile(task, "audio")
+    File(v.parentFile, "${v.name}.chk").delete()
+    File(a.parentFile, "${a.name}.chk").delete()
+    v.delete()
+    a.delete()
     }
+    
 
     private fun persist() {
         if (!initialized) return
