@@ -228,6 +228,26 @@ fun FeedList(
     val list = rememberScrollToTop(scrollToTop)
 
     LaunchedEffect(feed.generation, filterScrollKey) { list.scrollToItem(0) }
+        LaunchedEffect(list.isScrollInProgress, listVideos) {
+        if (!list.isScrollInProgress && listVideos.isNotEmpty()) {
+            kotlinx.coroutines.delay(350L)
+            val validIds = listVideos.mapTo(HashSet()) { it.id }
+            val visibleIds = list.layoutInfo.visibleItemsInfo
+                .mapNotNull { it.key as? String }
+                .filter { it in validIds }
+                .take(2)
+            visibleIds.forEach { videoId ->
+                launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val info = runCatching { StreamCache.getOrLoad(videoId) }.getOrNull() ?: return@launch
+                    val streamUrl = info.videoOnlyStreams.firstOrNull { it.isUrl }?.content
+                        ?: info.videoStreams.firstOrNull { it.isUrl }?.content
+                        ?: info.audioStreams.firstOrNull { it.isUrl }?.content
+                    Net.noteMediaHost(streamUrl)
+                }
+            }
+        }
+        }
+        
     val nearEnd by remember {
         derivedStateOf {
             val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
