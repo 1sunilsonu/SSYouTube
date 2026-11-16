@@ -1,30 +1,21 @@
 package com.tensei.ytxtube
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,12 +28,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,6 +38,161 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+
+private object SeenFeedStore {
+    private const val PREFS_NAME = "ss_seen_feed_prefs"
+    private const val KEY_SEEN_IDS = "seen_video_ids"
+    private const val MAX_SEEN = 350
+
+    private val lock = Any()
+    private var prefs: SharedPreferences? = null
+    private val seenIds = LinkedHashSet<String>()
+
+    fun ensureInit(context: Context? = null) {
+        synchronized(lock) {
+            if (prefs != null) return
+            val appCtx = context?.applicationContext ?: runCatching {
+                Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication")
+                    .invoke(null) as? Application
+            }.getOrNull() ?: return
+
+            val p = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs = p
+            val saved = p.getString(KEY_SEEN_IDS, null).orEmpty()
+            if (saved.isNotBlank()) {
+                saved.split(',').filter { it.isNotBlank() }.forEach { seenIds.add(it) }
+            }
+        }
+    }
+
+    fun isSeen(id: String): Boolean {
+        ensureInit()
+        synchronized(lock) {
+            return id in seenIds
+        }
+    }
+
+    fun markSeen(ids: Iterable<String>) {
+        ensureInit()
+        synchronized(lock) {
+            var changed = false
+            for (id in ids) {
+                if (id.isNotBlank()) {
+                    seenIds.remove(id)
+                    seenIds.add(id)
+                    changed = true
+                }
+            }
+            if (!changed) return
+            while (seenIds.size > MAX_SEEN) {
+                val oldest = seenIds.firstOrNull() ?: break
+                seenIds.remove(oldest)
+            }
+            prefs?.edit()?.putString(KEY_SEEN_IDS, seenIds.joinToString(","))?.apply()
+        }
+    }
+}
+
+internal object UserTasteStore {
+    private const val PREFS_NAME = "ss_user_taste_prefs"
+    private const val KEY_WATCHED = "watched_history_json"
+    private const val MAX_WATCHED = 25
+
+    data class WatchedEntry(val id: String, val title: String, val channel: String, val topic: String)
+
+    private val lock = Any()
+    private var prefs: SharedPreferences? = null
+    private val entries = ArrayList<WatchedEntry>()
+
+    fun ensureInit(context: Context? = null) {
+        synchronized(lock) {
+            if (prefs != null) return
+            val appCtx = context?.applicationContext ?: runCatching {
+                Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication")
+                    .invoke(null) as? Application
+            }.getOrNull() ?: return
+
+            val p = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs = p
+            val raw = p.getString(KEY_WATCHED, null).orEmpty()
+            if (raw.isNotBlank()) {
+                runCatching {
+                    val arr = JSONArray(raw)
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.optJSONObject(i) ?: continue
+                        val id = obj.optString("id")
+                        val title = obj.optString("title")
+                        val channel = obj.optString("channel")
+                        val topic = obj.optString("topic").ifBlank { extractTopic(title, channel) }
+                        if (id.isNotBlank()) {
+                            entries.add(WatchedEntry(id, title, channel, topic))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun recordWatch(video: VideoItem) {
+        if (video.id.isBlank()) return
+        ensureInit()
+        synchronized(lock) {
+            entries.removeAll { it.id == video.id }
+            val topic = extractTopic(video.title, video.channel)
+            entries.add(0, WatchedEntry(video.id, video.title, video.channel, topic))
+            while (entries.size > MAX_WATCHED) {
+                entries.removeAt(entries.lastIndex)
+            }
+            saveLocked()
+        }
+    }
+
+    fun snapshot(): List<WatchedEntry> {
+        ensureInit()
+        synchronized(lock) {
+            return entries.toList()
+        }
+    }
+
+    private fun saveLocked() {
+        val arr = JSONArray()
+        for (e in entries) {
+            arr.put(
+                JSONObject()
+                    .put("id", e.id)
+                    .put("title", e.title)
+                    .put("channel", e.channel)
+                    .put("topic", e.topic)
+            )
+        }
+        prefs?.edit()?.putString(KEY_WATCHED, arr.toString())?.apply()
+    }
+
+    private fun extractTopic(title: String, channel: String): String {
+        val cleaned = title
+            .replace(Regex("\\[[^\\]]*\\]"), " ")
+            .replace(Regex("\\([^)]*\\)"), " ")
+            .substringBefore('|')
+            .substringBefore(" - ")
+            .replace(Regex("#\\S+"), " ")
+            .replace(Regex("\\b(official|video|audio|lyrical|lyrics|full|song|hd|4k|8k|2024|2025|2026|new|latest|ft|feat)\\b", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val words = cleaned.split(' ').filter { it.length > 1 }.take(5)
+        val phrase = words.joinToString(" ")
+        return when {
+            phrase.length >= 4 -> phrase
+            channel.isNotBlank() -> channel.trim()
+            else -> title.take(35).trim()
+        }
+    }
+}
 
 @Stable
 class FeedState(
@@ -148,11 +291,10 @@ class FeedState(
         else -> t.message?.takeIf { it.startsWith("YouTube") } ?: YouTube.friendlyError(t)
     }
 }
-
 @Stable
 class LibraryData(scope: CoroutineScope) {
 
-    val home = FeedState(scope, freshOnRefresh = false) { loadIndianPersonalizedHome(it) }
+    val home = FeedState(scope, freshOnRefresh = false) { loadYouTubeStyleHome(it) }
     val subscriptions = FeedState(scope) { InnerTube.subscriptionsFeed(it) }
     val history = FeedState(scope) { InnerTube.history(it) }
     var channels by mutableStateOf<List<ChannelRef>>(emptyList())
@@ -161,93 +303,122 @@ class LibraryData(scope: CoroutineScope) {
         private set
     private val scope = scope
 
-    private suspend fun loadIndianPersonalizedHome(next: String?): FeedPage {
-        if (next != null) {
-            return when {
-                next.startsWith("search:") -> {
-                    val payload = next.removePrefix("search:")
-                    val sep = payload.indexOf('|')
-                    if (sep <= 0) FeedPage(emptyList(), null)
-                    else {
-                        val q = payload.substring(0, sep)
-                        val token = payload.substring(sep + 1)
-                        val page = YouTube.searchPage(q, token)
-                        FeedPage(page.videos, page.next?.let { "search:$q|$it" })
-                    }
-                }
-                next.startsWith("indian_songs|") -> {
-                    val token = next.removePrefix("indian_songs|")
-                    val page = YouTube.searchPage("latest hindi punjabi songs official video", token)
-                    FeedPage(page.videos, page.next?.let { "indian_songs|$it" })
-                }
-                else -> InnerTube.homeFeed(next)
-            }
+    private val indianDiscoveryQueries = listOf(
+        "latest hindi songs official video",
+        "new punjabi songs official video",
+        "bollywood hit songs official video",
+        "trending indian songs official music video",
+        "new rajasthani dj song official video",
+        "latest hindi romantic songs official video",
+        "new indian pop songs official video",
+        "trending music india official video",
+        "arijit singh latest songs official",
+        "indian viral trending videos today",
+    )
+
+    private suspend fun fetchFreshQueryVideos(query: String, targetCount: Int): List<VideoItem> {
+        val page1 = runCatching { YouTube.searchPage(query, null) }.getOrNull() ?: return emptyList()
+        val unseen1 = page1.videos.filterNot { SeenFeedStore.isSeen(it.id) }
+        if (unseen1.size >= targetCount || page1.next == null) {
+            return if (unseen1.isNotEmpty()) unseen1.shuffled() else page1.videos.shuffled()
         }
+        val page2 = runCatching { YouTube.searchPage(query, page1.next) }.getOrNull()
+        val unseen2 = page2?.videos?.filterNot { SeenFeedStore.isSeen(it.id) }.orEmpty()
+        val combined = (unseen1 + unseen2)
+        return if (combined.isNotEmpty()) combined.shuffled() else (page1.videos + page2?.videos.orEmpty()).shuffled()
+    }
 
-        val recent = SearchHistory.queries.take(3)
-        if (recent.isNotEmpty()) {
-            return coroutineScope {
-                val primaryDef = async { YouTube.searchPage(recent[0], null) }
-                val secondaryDefs = recent.drop(1).map { q ->
-                    async { runCatching { YouTube.searchPage(q, null).videos.take(6) }.getOrDefault(emptyList()) }
-                }
-                val primary = primaryDef.await()
-                val secondaryLists = secondaryDefs.map { it.await() }
+    private suspend fun fetchRelatedForWatched(videoId: String): List<VideoItem> {
+        return runCatching {
+            val related = YouTube.details(videoId).related.filter { !it.isLive }
+            val unseen = related.filterNot { SeenFeedStore.isSeen(it.id) }
+            if (unseen.isNotEmpty()) unseen.shuffled() else related.shuffled()
+        }.getOrDefault(emptyList())
+    }
 
-                val merged = ArrayList<VideoItem>()
-                val seen = HashSet<String>()
-                fun addUnique(items: List<VideoItem>) {
-                    for (v in items) {
-                        if (seen.add(v.id)) merged.add(v)
-                    }
-                }
+    private suspend fun loadYouTubeStyleHome(next: String?): FeedPage {
+        SeenFeedStore.ensureInit()
+        UserTasteStore.ensureInit()
 
-                addUnique(primary.videos.take(8))
-                for (sec in secondaryLists) {
-                    addUnique(sec)
-                }
-                addUnique(primary.videos.drop(8))
-
-                val nextToken = primary.next?.let { "search:${recent[0]}|$it" }
-                FeedPage(merged, nextToken)
-            }
-        }
+        val pageNum = next?.removePrefix("yt_page:")?.toIntOrNull() ?: 1
+        val watched = UserTasteStore.snapshot()
+        val searches = SearchHistory.queries
 
         return coroutineScope {
-            val hindiSongsDef = async {
-                runCatching { YouTube.searchPage("latest hindi punjabi songs official video", null) }
-                    .getOrDefault(FeedPage(emptyList(), null))
+            val pickedWatched = if (watched.isNotEmpty()) {
+                val latest = watched.first()
+                val older = watched.drop(1).shuffled().take(1)
+                (listOf(latest) + older).distinctBy { it.id }
+            } else emptyList()
+
+            val relatedDefs = pickedWatched.map { entry ->
+                async { fetchRelatedForWatched(entry.id).take(10) }
             }
-            val bollywoodDef = async {
-                runCatching { YouTube.searchPage("new bollywood hit songs official video", null).videos.take(10) }
-                    .getOrDefault(emptyList())
+
+            val watchTopicQuery = watched.shuffled().firstOrNull()?.let { entry ->
+                if (pageNum % 2 == 0 && entry.channel.isNotBlank()) entry.channel else entry.topic
             }
-            val indiaTrendingDef = async {
+            val watchTopicDef = async {
+                if (!watchTopicQuery.isNullOrBlank()) fetchFreshQueryVideos(watchTopicQuery, 8).take(8)
+                else emptyList()
+            }
+
+            val searchQuery = when {
+                searches.isEmpty() -> null
+                pageNum == 1 && searches.size > 1 -> listOf(searches[0], searches.drop(1).random()).random()
+                else -> searches.take(8).random()
+            }
+            val searchDef = async {
+                if (!searchQuery.isNullOrBlank()) fetchFreshQueryVideos(searchQuery, 8).take(8)
+                else emptyList()
+            }
+
+            val trendingDef = async {
                 runCatching {
-                    if (Account.signedIn) InnerTube.homeFeed(null).videos.take(8)
-                    else YouTube.trending(null).videos.take(8)
+                    val raw = if (Account.signedIn && pageNum == 1) {
+                        InnerTube.homeFeed(null).videos
+                    } else {
+                        YouTube.trending(null).videos
+                    }
+                    val unseen = raw.filterNot { SeenFeedStore.isSeen(it.id) }
+                    (if (unseen.isNotEmpty()) unseen else raw).shuffled().take(8)
                 }.getOrDefault(emptyList())
             }
 
-            val hindiPage = hindiSongsDef.await()
-            val bollywood = bollywoodDef.await()
-            val trending = indiaTrendingDef.await()
+            val discoveryQueries = indianDiscoveryQueries.shuffled().take(if (watched.isEmpty() && searches.isEmpty()) 3 else 1)
+            val discoveryDefs = discoveryQueries.map { q ->
+                async { fetchFreshQueryVideos(q, 8).take(8) }
+            }
+
+            val relatedLists = relatedDefs.map { it.await() }
+            val watchTopicVideos = watchTopicDef.await()
+            val searchVideos = searchDef.await()
+            val trendingVideos = trendingDef.await()
+            val discoveryLists = discoveryDefs.map { it.await() }
 
             val merged = ArrayList<VideoItem>()
-            val seen = HashSet<String>()
-            fun addUnique(v: VideoItem) {
-                if (seen.add(v.id)) merged.add(v)
+            val seenInBatch = HashSet<String>()
+            fun addUnique(v: VideoItem?) {
+                if (v != null && seenInBatch.add(v.id)) {
+                    merged.add(v)
+                }
             }
 
-            val maxLen = maxOf(hindiPage.videos.size, bollywood.size, trending.size)
-            for (i in 0 until maxLen) {
-                hindiPage.videos.getOrNull(i * 2)?.let(::addUnique)
-                hindiPage.videos.getOrNull(i * 2 + 1)?.let(::addUnique)
-                bollywood.getOrNull(i)?.let(::addUnique)
-                if (i % 2 == 0) trending.getOrNull(i / 2)?.let(::addUnique)
+            val maxRows = 12
+            for (i in 0 until maxRows) {
+                for (rel in relatedLists) {
+                    addUnique(rel.getOrNull(i))
+                }
+                addUnique(watchTopicVideos.getOrNull(i))
+                addUnique(searchVideos.getOrNull(i))
+                addUnique(trendingVideos.getOrNull(i))
+                for (disc in discoveryLists) {
+                    addUnique(disc.getOrNull(i))
+                }
             }
 
-            val nextToken = hindiPage.next?.let { "indian_songs|$it" }
+            SeenFeedStore.markSeen(merged.take(18).map { it.id })
+            val nextToken = if (merged.isNotEmpty() && pageNum < 15) "yt_page:${pageNum + 1}" else null
             FeedPage(merged, nextToken)
         }
     }
@@ -293,6 +464,13 @@ fun FeedList(
     filterScrollKey: Any? = null,
     channelAvatarSeed: Map<String, String?> = emptyMap(),
 ) {
+    val context = LocalContext.current
+    remember(context) {
+        SeenFeedStore.ensureInit(context)
+        UserTasteStore.ensureInit(context)
+        true
+    }
+
     val c = MaterialTheme.colorScheme
     val listVideos = videos ?: feed.videos
     val scope = rememberCoroutineScope()
@@ -336,7 +514,11 @@ fun FeedList(
             items(listVideos, key = { it.id }) { video ->
                 VideoCard(
                     video,
-                    onClick = { onOpen(video) },
+                    onClick = {
+                        SeenFeedStore.markSeen(listOf(video.id))
+                        UserTasteStore.recordWatch(video)
+                        onOpen(video)
+                    },
                     modifier = Modifier.animateItem(),
                 )
             }
