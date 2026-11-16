@@ -15,7 +15,6 @@ import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
-
 object Net {
 
     const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
@@ -56,10 +55,7 @@ object Net {
             .build()
     }
 
-
     @Volatile private var mediaHost: String? = null
-
-        @Volatile private var mediaHost: String? = null
 
     fun noteMediaHost(url: String?) {
         val host = url?.toHttpUrlOrNull()?.host ?: return
@@ -87,13 +83,7 @@ object Net {
         warmHost("i.ytimg.com")
         warmHost("youtubei.googleapis.com")
     }
-    
-        mediaHost?.let { warmHost(it) }
-        warmHost("i.ytimg.com")
-        warmHost("youtubei.googleapis.com")
-    }
 }
-
 
 class NewPipeDownloader private constructor(private val client: OkHttpClient) : Downloader() {
 
@@ -168,7 +158,6 @@ class NewPipeDownloader private constructor(private val client: OkHttpClient) : 
             }
         }
         client.newCall(builder.build()).execute().use { response ->
-
             if (response.code == 429) throw ReCaptchaException("reCaptcha challenge requested", request.url())
             val text = response.body?.string()
             return Response(
