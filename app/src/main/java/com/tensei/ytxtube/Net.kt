@@ -59,8 +59,14 @@ object Net {
 
     @Volatile private var mediaHost: String? = null
 
+        @Volatile private var mediaHost: String? = null
+
     fun noteMediaHost(url: String?) {
-        url?.toHttpUrlOrNull()?.host?.let { mediaHost = it }
+        val host = url?.toHttpUrlOrNull()?.host ?: return
+        if (mediaHost != host) {
+            mediaHost = host
+            warmHost(host)
+        }
     }
 
     private fun warmHost(host: String) {
@@ -76,6 +82,12 @@ object Net {
     }
 
     fun prewarmMediaConnection() {
+        mediaHost?.let { warmHost(it) }
+        warmHost("redirector.googlevideo.com")
+        warmHost("i.ytimg.com")
+        warmHost("youtubei.googleapis.com")
+    }
+    
         mediaHost?.let { warmHost(it) }
         warmHost("i.ytimg.com")
         warmHost("youtubei.googleapis.com")
