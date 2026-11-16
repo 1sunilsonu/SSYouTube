@@ -201,20 +201,32 @@ object YouTube {
             .mapNotNull { it.toVideoItem() }
     }
 
+        private val searchPages = ConcurrentHashMap<String, Page>()
+
+    private fun stashSearchPage(page: Page?): String? {
+        if (page == null) return null
+        val token = "sp_${System.nanoTime()}_${searchPages.size}"
+        if (searchPages.size > 64) searchPages.clear()
+        searchPages[token] = page
+        return token
+    }
+
     suspend fun searchPage(query: String, pageUrl: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val handler = service.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.VIDEOS), "")
         if (pageUrl.isNullOrBlank()) {
             val info = SearchInfo.getInfo(service, handler)
             val items = info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { it.toVideoItem() }.filter { !it.isLive }
-            val next = if (info.hasNextPage()) info.nextPage?.url else null
+            val next = if (info.hasNextPage()) stashSearchPage(info.nextPage) else null
             FeedPage(items, next)
         } else {
-            val more = SearchInfo.getMoreItems(service, handler, Page(pageUrl))
+            val page = searchPages.remove(pageUrl) ?: Page(pageUrl)
+            val more = SearchInfo.getMoreItems(service, handler, page)
             val items = more.items.filterIsInstance<StreamInfoItem>().mapNotNull { it.toVideoItem() }.filter { !it.isLive }
-            val next = more.nextPage?.url
+            val next = if (more.hasNextPage()) stashSearchPage(more.nextPage) else null
             FeedPage(items, next)
         }
     }
+    
 
     suspend fun searchMusic(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
         val q = query.trim()
