@@ -1225,6 +1225,24 @@ fun SearchScreen(
                         onOpen(video)
                     })
                 }
+                                    if (state.hasMore || state.loadingMore) {
+                        item(key = "load-more-${state.results.size}") {
+                            LaunchedEffect(state.results.size, state.hasMore) {
+                                if (state.hasMore && !state.loadingMore) state.loadMore()
+                            }
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    color = c.primary,
+                                    strokeWidth = 3.dp,
+                                    modifier = Modifier.size(26.dp),
+                                )
+                            }
+                        }
+                                    }
+                                    
             }
             }
         }
