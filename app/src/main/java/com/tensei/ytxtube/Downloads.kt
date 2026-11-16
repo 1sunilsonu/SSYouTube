@@ -750,7 +750,15 @@ object Downloads {
         return downloaded
     }
     
-
+    private fun withRange(url: String, start: Long, end: Long): String {
+        val parsed = url.toHttpUrlOrNull() ?: return url
+        return parsed.newBuilder()
+            .removeAllQueryParameters("range")
+            .addQueryParameter("range", "$start-$end")
+            .build()
+            .toString()
+    }
+    
 
     private fun mux(video: File, audio: File, out: File, container: String) {
         if (container == "webm" && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
