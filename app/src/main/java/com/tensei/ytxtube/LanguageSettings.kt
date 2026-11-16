@@ -127,7 +127,8 @@ object LanguageSettings {
             "he" -> "IL"
             "fil" -> "PH"
             "ms" -> "MY"
-            else -> Locale.getDefault().country.ifBlank { "US" }
+            else -> "IN"
+            
         }
     }
 
@@ -155,7 +156,7 @@ object LanguageSettings {
 
             // Configure NewPipe preferred localization & content country
             val hl = targetLocale.language.ifBlank { effectiveLanguageCode() }
-            val gl = targetLocale.country.ifBlank { effectiveCountryCode() }
+            val gl = effectiveCountryCode()
             val loc = Localization(hl, gl)
             val cc = ContentCountry(gl)
             NewPipe.setupLocalization(loc, cc)
