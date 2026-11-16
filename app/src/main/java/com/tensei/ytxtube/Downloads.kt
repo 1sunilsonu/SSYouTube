@@ -157,7 +157,7 @@ object Downloads {
 
     fun init(context: Context) {
         if (initialized) return
-        appContext = context.applicationContext8
+        appContext = context.applicationContext
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val customPath = prefs.getString(KEY_CUSTOM_DIR, null)
         val targetDir = if (!customPath.isNullOrBlank()) {
@@ -541,7 +541,7 @@ object Downloads {
 
         task.error = null
         task.status = DownloadStatus.Complete
-        appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(target.absolutePath), null, null) }
+        appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(task.file.absolutePath), null, null) }
         persist()
         Log.i(TAG, "download ${task.key} complete: ${task.file.length()} bytes")
     }
