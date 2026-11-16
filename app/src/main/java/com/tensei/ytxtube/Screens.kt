@@ -820,22 +820,32 @@ class SearchState(private val scope: CoroutineScope) {
         private set
     var loading by mutableStateOf(false)
         private set
+    var loadingMore by mutableStateOf(false)
+        private set
+    var hasMore by mutableStateOf(false)
+        private set
     var error by mutableStateOf<String?>(null)
         private set
     var generation by mutableStateOf(0)
         private set
     private var job: Job? = null
     private var suggestJob: Job? = null
+    private var moreJob: Job? = null
+    private var nextPageToken: String? = null
 
     fun reset() {
         job?.cancel()
         suggestJob?.cancel()
+        moreJob?.cancel()
         query = ""
         submitted = ""
         results = emptyList()
         suggestions = emptyList()
         suggestionsLoading = false
         loading = false
+        loadingMore = false
+        hasMore = false
+        nextPageToken = null
         error = null
     }
 
@@ -850,7 +860,11 @@ class SearchState(private val scope: CoroutineScope) {
                 results = emptyList()
                 error = null
                 loading = false
+                loadingMore = false
+                hasMore = false
+                nextPageToken = null
                 job?.cancel()
+                moreJob?.cancel()
             }
             return
         }
@@ -869,17 +883,53 @@ class SearchState(private val scope: CoroutineScope) {
         if (q.isEmpty()) return
         SearchHistory.add(q)
         suggestJob?.cancel()
+        moreJob?.cancel()
         suggestions = emptyList()
         suggestionsLoading = false
         submitted = q
         loading = true
+        loadingMore = false
+        hasMore = false
+        nextPageToken = null
         error = null
         job?.cancel()
         job = scope.launch {
-            runCatching { YouTube.search(q) }
-                .onSuccess { results = it; generation++ }
+            runCatching { YouTube.searchPage(q) }
+                .onSuccess { page ->
+                    var combined = page.videos
+                    var token = page.next
+                    if (combined.size < 15 && !token.isNullOrBlank()) {
+                        runCatching { YouTube.searchPage(q, token) }.onSuccess { p2 ->
+                            val seen = combined.mapTo(HashSet()) { it.id }
+                            combined = combined + p2.videos.filter { seen.add(it.id) }
+                            token = p2.next
+                        }
+                    }
+                    results = combined
+                    nextPageToken = token
+                    hasMore = !token.isNullOrBlank()
+                    generation++
+                }
                 .onFailure { error = YouTube.friendlyError(it) }
             loading = false
+        }
+    }
+
+    fun loadMore() {
+        val q = submitted
+        val token = nextPageToken
+        if (q.isBlank() || token.isNullOrBlank() || loading || loadingMore) return
+        loadingMore = true
+        moreJob = scope.launch {
+            runCatching { YouTube.searchPage(q, token) }
+                .onSuccess { page ->
+                    val seen = results.mapTo(HashSet()) { it.id }
+                    val fresh = page.videos.filter { seen.add(it.id) }
+                    results = results + fresh
+                    nextPageToken = page.next
+                    hasMore = !page.next.isNullOrBlank()
+                }
+            loadingMore = false
         }
     }
 }
