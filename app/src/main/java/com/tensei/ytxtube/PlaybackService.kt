@@ -72,10 +72,10 @@ class PlaybackService : MediaSessionService() {
                 DefaultTrackSelector(
                     this,
                     AdaptiveTrackSelection.Factory(
- 2_000,
+ 1_000,
  25_000,
  25_000,
- 0.75f,
+ 0.85f,
                     ),
                 ).apply {
 
