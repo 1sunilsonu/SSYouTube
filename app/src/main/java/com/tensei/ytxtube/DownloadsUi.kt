@@ -64,7 +64,6 @@ import java.util.Locale
 @Composable
 fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)? = null, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
-    val context = LocalContext.current
     var options by remember(video.id) { mutableStateOf<List<DownloadOption>?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
     var selected by remember(video.id) { mutableStateOf<Int?>(null) }
@@ -73,7 +72,6 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
         runCatching { Downloads.options(video.id) }
             .onSuccess { list ->
                 options = list
-                // Highest available by default: a 4K video should offer 4K, not 720p.
                 selected = list.firstOrNull()?.height
             }
             .onFailure { error = it.message ?: "Could not load the available qualities" }
@@ -91,7 +89,7 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                 .padding(bottom = 26.dp),
         ) {
             Text(
-                "Download video",
+                "Download",
                 fontFamily = RoundedHeavy,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
@@ -118,39 +116,118 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
+
+            // Liquid Glass Highest Quality MP3 Audio Download Button
+            val glassShape = RoundedCornerShape(20.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressable(pressedScale = 0.97f) {
+                        val added = Downloads.enqueueAudio(video)
+                        onDownloadStarted?.invoke(
+                            if (added) "Downloading Highest MP3 Audio • ${video.title}"
+                            else "MP3 audio already in downloads"
+                        )
+                        onDismiss()
+                    }
+                    .clip(glassShape)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.24f),
+                                c.primary.copy(alpha = 0.16f),
+                                c.surfaceContainerHighest.copy(alpha = 0.42f),
+                            )
+                        )
+                    )
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.55f),
+                                c.primary.copy(alpha = 0.45f),
+                                Color.White.copy(alpha = 0.18f),
+                            )
+                        ),
+                        shape = glassShape,
+                    )
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color.White.copy(alpha = 0.32f), c.primary.copy(alpha = 0.28f))
+                            )
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = c.primary, modifier = Modifier.size(21.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Download Highest MP3 Audio",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = c.onSurface,
+                    )
+                    Text(
+                        "Studio Max Bitrate · Liquid Glass Audio",
+                        fontSize = 11.5.sp,
+                        color = c.onSurfaceVariant,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.18f))
+                        .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.Download, contentDescription = null, tint = c.primary, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
 
             when {
                 error != null -> Text(
                     error!!,
                     color = c.error,
                     fontSize = 13.sp,
-                    modifier = Modifier.padding(vertical = 16.dp),
+                    modifier = Modifier.padding(vertical = 12.dp),
                 )
                 options == null -> Box(
-                    Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 24.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(30.dp), strokeWidth = 3.dp)
                 }
                 options!!.isEmpty() -> Text(
-                    "This video has no downloadable qualities.",
+                    "This video has no downloadable video qualities.",
                     color = c.onSurfaceVariant,
                     fontSize = 13.sp,
-                    modifier = Modifier.padding(vertical = 16.dp),
+                    modifier = Modifier.padding(vertical = 12.dp),
                 )
                 else -> {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 280.dp)
+                            .heightIn(max = 250.dp)
                             .verticalScroll(rememberScrollState()),
                     ) {
                         options!!.forEach { option ->
                             QualityChoiceRow(option, selected == option.height) { selected = option.height }
                         }
                     }
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(16.dp))
                     val choice = options!!.firstOrNull { it.height == selected }
                     Button(
                         onClick = {
@@ -168,7 +245,7 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                         Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            if (choice == null) "Download" else "Download ${choice.label}${sizeSuffix(choice.estimatedBytes)}",
+                            if (choice == null) "Download Video" else "Download ${choice.label}${sizeSuffix(choice.estimatedBytes)}",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                         )
