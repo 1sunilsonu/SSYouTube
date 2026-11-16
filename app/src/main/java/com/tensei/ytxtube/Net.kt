@@ -1,5 +1,8 @@
 package com.tensei.ytxtube
 
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
+import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -7,6 +10,9 @@ import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 
@@ -14,16 +20,39 @@ object Net {
 
     const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
+    private data class DnsEntry(val addresses: List<InetAddress>, val expiresAt: Long)
+    private val dnsCache = ConcurrentHashMap<String, DnsEntry>()
+
+    private val fastDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            val now = System.currentTimeMillis()
+            val cached = dnsCache[hostname]
+            if (cached != null && cached.expiresAt > now) {
+                return cached.addresses
+            }
+            val raw = Dns.SYSTEM.lookup(hostname)
+            val sorted = raw.sortedBy { if (it is Inet4Address) 0 else 1 }
+            if (sorted.isNotEmpty()) {
+                dnsCache[hostname] = DnsEntry(sorted, now + 5 * 60 * 1000L)
+            }
+            return sorted
+        }
+    }
+
     val client: OkHttpClient by lazy {
-        val dispatcher = okhttp3.Dispatcher().apply {
-            maxRequests = 64
-            maxRequestsPerHost = 24
+        val dispatcher = Dispatcher().apply {
+            maxRequests = 128
+            maxRequestsPerHost = 48
         }
         OkHttpClient.Builder()
             .dispatcher(dispatcher)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .connectionPool(okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES))
+            .dns(fastDns)
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .connectionPool(ConnectionPool(64, 5, TimeUnit.MINUTES))
             .build()
     }
 
@@ -34,18 +63,22 @@ object Net {
         url?.toHttpUrlOrNull()?.host?.let { mediaHost = it }
     }
 
-    
-
-
-
-
-    fun prewarmMediaConnection() {
-        val host = mediaHost ?: return
-        val request = okhttp3.Request.Builder().url("https://$host/generate_204").head().header("User-Agent", USER_AGENT).build()
+    private fun warmHost(host: String) {
+        val request = okhttp3.Request.Builder()
+            .url("https://$host/generate_204")
+            .head()
+            .header("User-Agent", USER_AGENT)
+            .build()
         client.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {}
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) = response.close()
         })
+    }
+
+    fun prewarmMediaConnection() {
+        mediaHost?.let { warmHost(it) }
+        warmHost("i.ytimg.com")
+        warmHost("youtubei.googleapis.com")
     }
 }
 
