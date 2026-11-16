@@ -159,7 +159,7 @@ class FeedState(
 @Stable
 class LibraryData(scope: CoroutineScope) {
 
-    val home = FeedState(scope, freshOnRefresh = true) { InnerTube.homeFeed(it) }
+    val home = FeedState(scope, freshOnRefresh = false) { loadIndianPersonalizedHome(it) }
     val subscriptions = FeedState(scope) { InnerTube.subscriptionsFeed(it) }
     val history = FeedState(scope) { InnerTube.history(it) }
     var channels by mutableStateOf<List<ChannelRef>>(emptyList())
@@ -167,6 +167,97 @@ class LibraryData(scope: CoroutineScope) {
     var playlists by mutableStateOf<List<PlaylistRef>>(emptyList())
         private set
     private val scope = scope
+
+    private suspend fun loadIndianPersonalizedHome(next: String?): FeedPage {
+        if (next != null) {
+            return when {
+                next.startsWith("search:") -> {
+                    val payload = next.removePrefix("search:")
+                    val sep = payload.indexOf('|')
+                    if (sep <= 0) FeedPage(emptyList(), null)
+                    else {
+                        val q = payload.substring(0, sep)
+                        val token = payload.substring(sep + 1)
+                        val page = YouTube.searchPage(q, token)
+                        FeedPage(page.videos, page.next?.let { "search:$q|$it" })
+                    }
+                }
+                next.startsWith("indian_songs|") -> {
+                    val token = next.removePrefix("indian_songs|")
+                    val page = YouTube.searchPage("latest hindi punjabi songs official video", token)
+                    FeedPage(page.videos, page.next?.let { "indian_songs|$it" })
+                }
+                else -> InnerTube.homeFeed(next)
+            }
+        }
+
+        val recent = SearchHistory.queries.take(3)
+        if (recent.isNotEmpty()) {
+            return kotlinx.coroutines.coroutineScope {
+                val primaryDef = async { YouTube.searchPage(recent[0], null) }
+                val secondaryDefs = recent.drop(1).map { q ->
+                    async { runCatching { YouTube.searchPage(q, null).videos.take(6) }.getOrDefault(emptyList()) }
+                }
+                val primary = primaryDef.await()
+                val secondaryLists = secondaryDefs.map { it.await() }
+
+                val merged = ArrayList<VideoItem>()
+                val seen = HashSet<String>()
+                fun addUnique(items: List<VideoItem>) {
+                    for (v in items) {
+                        if (seen.add(v.id)) merged.add(v)
+                    }
+                }
+
+                addUnique(primary.videos.take(8))
+                for (sec in secondaryLists) {
+                    addUnique(sec)
+                }
+                addUnique(primary.videos.drop(8))
+
+                val nextToken = primary.next?.let { "search:${recent[0]}|$it" }
+                FeedPage(merged, nextToken)
+            }
+        }
+
+        return kotlinx.coroutines.coroutineScope {
+            val hindiSongsDef = async {
+                runCatching { YouTube.searchPage("latest hindi punjabi songs official video", null) }
+                    .getOrDefault(FeedPage(emptyList(), null))
+            }
+            val bollywoodDef = async {
+                runCatching { YouTube.searchPage("new bollywood hit songs official video", null).videos.take(10) }
+                    .getOrDefault(emptyList())
+            }
+            val indiaTrendingDef = async {
+                runCatching {
+                    if (Account.signedIn) InnerTube.homeFeed(null).videos.take(8)
+                    else YouTube.trending(null).videos.take(8)
+                }.getOrDefault(emptyList())
+            }
+
+            val hindiPage = hindiSongsDef.await()
+            val bollywood = bollywoodDef.await()
+            val trending = indiaTrendingDef.await()
+
+            val merged = ArrayList<VideoItem>()
+            val seen = HashSet<String>()
+            fun addUnique(v: VideoItem) {
+                if (seen.add(v.id)) merged.add(v)
+            }
+
+            val maxLen = maxOf(hindiPage.videos.size, bollywood.size, trending.size)
+            for (i in 0 until maxLen) {
+                hindiPage.videos.getOrNull(i * 2)?.let(::addUnique)
+                hindiPage.videos.getOrNull(i * 2 + 1)?.let(::addUnique)
+                bollywood.getOrNull(i)?.let(::addUnique)
+                if (i % 2 == 0) trending.getOrNull(i / 2)?.let(::addUnique)
+            }
+
+            val nextToken = hindiPage.next?.let { "indian_songs|$it" }
+            FeedPage(merged, nextToken)
+        }
+    }
 
     fun loadChannels() = scope.launch { runCatching { InnerTube.channels() }.onSuccess { channels = it } }
     fun loadPlaylists() = scope.launch { runCatching { InnerTube.playlists() }.onSuccess { playlists = it } }
@@ -183,6 +274,11 @@ class LibraryData(scope: CoroutineScope) {
     }
 
     fun reset() {
+        home.reset(); subscriptions.reset(); history.reset()
+        channels = emptyList(); playlists = emptyList()
+    }
+}
+
         home.reset(); subscriptions.reset(); history.reset()
         channels = emptyList(); playlists = emptyList()
     }
