@@ -582,6 +582,176 @@ object Downloads {
             res = runCatching { Net.client.newCall(makeProbeRequest(url, true)).execute() }.getOrNull()
         }
         val response = res ?: throw IOException("Could not connect to video server")
+    private suspend fun execute(task: DownloadTask) {
+        var attempt = 0
+        try {
+            while (true) {
+                try {
+                    runDownload(task)
+                    return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    if (attempt < 4) {
+                        attempt++
+                        StreamCache.invalidate(task.videoId)
+                        kotlinx.coroutines.delay(1200L * attempt)
+                        continue
+                    }
+                    throw t
+                }
+            }
+        } catch (e: CancellationException) {
+            if (task.status == DownloadStatus.Downloading || task.status == DownloadStatus.Processing) {
+                task.status = DownloadStatus.Paused
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "download ${task.key} failed", t)
+            task.error = t.message ?: "Download failed"
+            task.status = DownloadStatus.Failed
+            deleteWork(task)
+        } finally {
+            jobs.remove(task.key)
+            persist()
+            pump()
+        }
+    }
+
+    private suspend fun runDownload(task: DownloadTask) {
+        task.status = DownloadStatus.Downloading
+        StreamCache.invalidate(task.videoId)
+        val info = StreamCache.getOrLoad(task.videoId)
+        HdrFormats.install(task.videoId, info)
+
+        if (task.height == 0) {
+            val audio = bestAudio(info, webm = false) ?: throw IOException("Audio stream not available")
+            val work = workFile(task, "audio")
+            val remote = probe(audio.content)
+            task.total = remote.total
+            val aDone = AtomicLong(0L)
+            val received = transfer(audio.content, work, remote) { n -> report(task, aDone.addAndGet(n)) }
+            if (received != remote.total || work.length() != remote.total) {
+                throw IOException("Audio download incomplete (${work.length()} of ${remote.total} bytes)")
+            }
+            val target = task.file
+            target.delete()
+            if (!work.renameTo(target)) {
+                work.copyTo(target, overwrite = true)
+                work.delete()
+            }
+            task.total = target.length()
+            task.downloaded = task.total
+            task.status = DownloadStatus.Complete
+            appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(target.absolutePath), null, null) }
+            return
+        }
+
+        val option = optionsFor(info).firstOrNull { it.height == task.height }
+            ?: throw IOException("That quality is no longer available")
+        val muxed = option.muxed
+
+        if (muxed != null) {
+            if (task.total <= 0L) task.total = option.estimatedBytes
+            val work = workFile(task, "video")
+            val remote = probe(muxed.content)
+            task.total = remote.total
+            val mDone = AtomicLong(0L)
+            val received = transfer(muxed.content, work, remote) { n -> report(task, mDone.addAndGet(n)) }
+            if (received != remote.total || work.length() != remote.total) {
+                throw IOException("Download incomplete (${work.length()} of ${remote.total} bytes)")
+            }
+            val target = task.file
+            target.delete()
+            if (!work.renameTo(target)) {
+                work.copyTo(target, overwrite = true)
+                work.delete()
+            }
+            task.total = target.length()
+            task.downloaded = task.total
+        } else {
+            val video = option.video ?: throw IOException("No video stream")
+            val audio = option.audio ?: throw IOException("No audio stream")
+            if (task.total <= 0L) task.total = option.estimatedBytes
+            val vWork = workFile(task, "video")
+            val aWork = workFile(task, "audio")
+
+            val vRemote = probe(video.content)
+            val aRemote = probe(audio.content)
+            task.total = vRemote.total + aRemote.total
+            val vDone = AtomicLong(0L)
+            val aDone = AtomicLong(0L)
+            coroutineScope {
+                launch {
+                    val n = transfer(video.content, vWork, vRemote) { n ->
+                        report(task, vDone.addAndGet(n) + aDone.get())
+                    }
+                    if (n != vRemote.total || vWork.length() != vRemote.total) {
+                        throw IOException("Video download incomplete (${vWork.length()} of ${vRemote.total} bytes)")
+                    }
+                }
+                launch {
+                    val n = transfer(audio.content, aWork, aRemote) { n ->
+                        report(task, aDone.addAndGet(n) + vDone.get())
+                    }
+                    if (n != aRemote.total || aWork.length() != aRemote.total) {
+                        throw IOException("Audio download incomplete (${aWork.length()} of ${aRemote.total} bytes)")
+                    }
+                }
+            }
+            task.downloaded = task.total
+            task.status = DownloadStatus.Processing
+            persist()
+
+            val target = task.file
+            target.delete()
+            mux(vWork, aWork, target, option.container)
+            vWork.delete()
+            aWork.delete()
+            if (!target.exists() || target.length() <= 0L) throw IOException("Could not finish the download")
+            task.total = target.length()
+            task.downloaded = task.total
+        }
+
+        task.error = null
+        task.status = DownloadStatus.Complete
+        appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(task.file.absolutePath), null, null) }
+        persist()
+        Log.i(TAG, "download ${task.key} complete: ${task.file.length()} bytes")
+    }
+
+    private fun report(task: DownloadTask, done: Long) {
+        val now = SystemClock.elapsedRealtime()
+        val last = lastReport[task.key] ?: 0L
+        if (now - last >= 120L) {
+            lastReport[task.key] = now
+            task.downloaded = done.coerceAtMost(if (task.total > 0) task.total else done)
+            val lastSaved = lastPersist[task.key] ?: 0L
+            if (now - lastSaved >= 2_000L) {
+                lastPersist[task.key] = now
+                persist()
+            }
+        }
+    }
+
+    private data class Remote(val total: Long, val ranges: Boolean)
+
+    private fun probe(url: String): Remote {
+        fun makeProbeRequest(u: String, addRangeQuery: Boolean): Request {
+            val finalUrl = if (addRangeQuery) withRange(u, 0L, 0L) else u
+            return Request.Builder()
+                .url(finalUrl)
+                .header("Range", "bytes=0-0")
+                .header("User-Agent", Net.USER_AGENT)
+                .header("Referer", "https://www.youtube.com/")
+                .build()
+        }
+
+        var res = runCatching { Net.client.newCall(makeProbeRequest(url, false)).execute() }.getOrNull()
+        if (res == null || !res.isSuccessful) {
+            res?.close()
+            res = runCatching { Net.client.newCall(makeProbeRequest(url, true)).execute() }.getOrNull()
+        }
+        val response = res ?: throw IOException("Could not connect to video server")
         response.use {
             if (!it.isSuccessful) throw HttpStatusException(it.code)
             val contentRange = it.header("Content-Range")
@@ -593,71 +763,115 @@ object Downloads {
         }
     }
 
-        private suspend fun transfer(
+    private suspend fun transfer(
         url: String,
         file: File,
         remote: Remote,
         onProgress: (Long) -> Unit,
     ): Long {
-        if (remote.ranges && remote.total > 512 * 1024L) {
-            RandomAccessFile(file, "rw").use { it.setLength(remote.total) }
-            val parts = 6
-            val chunkSize = (remote.total + parts - 1L) / parts
-            val fileLock = Any()
-            val totalWritten = AtomicLong(0L)
-            coroutineScope {
-                (0 until parts).map { idx ->
-                    val start = idx * chunkSize
-                    val end = min(remote.total - 1L, (idx + 1) * chunkSize - 1L)
-                    async(Dispatchers.IO) {
-                        if (start > end) return@async
-                        var pos = start
-                        var attempts = 0
-                        val buf = ByteArray(64 * 1024)
-                        while (pos <= end) {
-                            try {
-                                val req = Request.Builder()
-                                    .url(withRange(url, pos, end))
-                                    .header("Range", "bytes=$pos-$end")
-                                    .header("User-Agent", Net.USER_AGENT)
-                                    .header("Referer", "https://www.youtube.com/")
-                                    .build()
-                                Net.client.newCall(req).execute().use { res ->
-                                    if (res.code != 200 && res.code != 206) {
-                                        throw HttpStatusException(res.code)
-                                    }
-                                    val src = res.body?.source() ?: throw IOException("Empty response body")
-                                    if (res.code == 200 && pos > start) pos = start
-                                    while (pos <= end) {
-                                        val maxRead = min(buf.size.toLong(), end - pos + 1L).toInt()
-                                        val read = src.read(buf, 0, maxRead)
-                                        if (read <= 0) break
-                                        synchronized(fileLock) {
-                                            RandomAccessFile(file, "rw").use { raf ->
-                                                raf.seek(pos)
-                                                raf.write(buf, 0, read)
-                                            }
-                                        }
-                                        pos += read
-                                        totalWritten.addAndGet(read.toLong())
-                                        onProgress(read.toLong())
-                                    }
-                                }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (t: Throwable) {
-                                attempts++
-                                if (attempts >= 5) throw t
-                                kotlinx.coroutines.delay(400L * attempts)
-                            }
+        val chkFile = File(file.parentFile, "${file.name}.chk")
+        if (remote.ranges && remote.total > 0L) {
+            val segmentSize = 512L * 1024L
+            val segmentCount = ((remote.total + segmentSize - 1L) / segmentSize).toInt()
+            if (!file.exists() || file.length() != remote.total) {
+                chkFile.delete()
+                RandomAccessFile(file, "rw").use { it.setLength(remote.total) }
+            }
+            val completed = HashSet<Int>()
+            if (chkFile.exists()) {
+                runCatching {
+                    chkFile.forEachLine { line ->
+                        line.trim().toIntOrNull()?.let { idx ->
+                            if (idx in 0 until segmentCount) completed.add(idx)
                         }
                     }
-                }.awaitAll()
+                }
             }
+            var initialBytes = 0L
+            for (idx in completed) {
+                val s = idx * segmentSize
+                val e = min(remote.total - 1L, s + segmentSize - 1L)
+                initialBytes += (e - s + 1L)
+            }
+            if (initialBytes > 0L) onProgress(initialBytes)
+
+            val totalWritten = AtomicLong(initialBytes)
+            val nextSegment = java.util.concurrent.atomic.AtomicInteger(0)
+            val fileLock = Any()
+
+            RandomAccessFile(file, "rw").use { raf ->
+                coroutineScope {
+                    (0 until 3).map {
+                        async(Dispatchers.IO) {
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val segIdx = nextSegment.getAndIncrement()
+                                if (segIdx >= segmentCount) break
+                                if (synchronized(fileLock) { completed.contains(segIdx) }) continue
+
+                                val segStart = segIdx * segmentSize
+                                val segEnd = min(remote.total - 1L, segStart + segmentSize - 1L)
+                                var pos = segStart
+                                var attempts = 0
+                                var useQueryRange = false
+
+                                while (pos <= segEnd) {
+                                    try {
+                                        val targetUrl = if (useQueryRange) withRange(url, pos, segEnd) else url
+                                        val req = Request.Builder()
+                                            .url(targetUrl)
+                                            .header("Range", "bytes=$pos-$segEnd")
+                                            .header("User-Agent", Net.USER_AGENT)
+                                            .header("Referer", "https://www.youtube.com/")
+                                            .build()
+                                        Net.client.newCall(req).execute().use { res ->
+                                            if (res.code != 200 && res.code != 206) {
+                                                throw HttpStatusException(res.code)
+                                            }
+                                            if (res.code == 200 && !useQueryRange && pos > 0L) {
+                                                useQueryRange = true
+                                                continue
+                                            }
+                                            val src = res.body?.source() ?: throw IOException("Empty response body")
+                                            while (pos <= segEnd) {
+                                                val maxRead = min(buf.size.toLong(), segEnd - pos + 1L).toInt()
+                                                val read = src.read(buf, 0, maxRead)
+                                                if (read <= 0) break
+                                                synchronized(fileLock) {
+                                                    raf.seek(pos)
+                                                    raf.write(buf, 0, read)
+                                                }
+                                                pos += read
+                                                totalWritten.addAndGet(read.toLong())
+                                                onProgress(read.toLong())
+                                                attempts = 0
+                                            }
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (t: Throwable) {
+                                        attempts++
+                                        if (attempts >= 5) throw t
+                                        kotlinx.coroutines.delay(350L * attempts)
+                                    }
+                                }
+                                synchronized(fileLock) {
+                                    if (completed.add(segIdx)) {
+                                        runCatching { chkFile.appendText("$segIdx\n") }
+                                    }
+                                }
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+            if (totalWritten.get() == remote.total) chkFile.delete()
             return totalWritten.get()
         }
 
+        chkFile.delete()
         var downloaded = if (file.exists()) file.length() else 0L
+        if (downloaded > 0L) onProgress(downloaded)
         if (remote.total > 0 && downloaded >= remote.total) return downloaded
 
         var attempts = 0
@@ -706,21 +920,12 @@ object Downloads {
                 if (attempts >= maxAttempts) {
                     throw IOException("Download failed at $downloaded of ${remote.total} bytes: ${t.message}", t)
                 }
-                kotlinx.coroutines.delay(1000L * attempts)
+                kotlinx.coroutines.delay(800L * attempts)
             }
         }
         return downloaded
-        }
-        
-    private fun withRange(url: String, start: Long, end: Long): String {
-        val parsed = url.toHttpUrlOrNull() ?: return url
-        return parsed.newBuilder()
-            .removeAllQueryParameters("range")
-            .addQueryParameter("range", "$start-$end")
-            .build()
-            .toString()
     }
-
+    
 
 
     private fun mux(video: File, audio: File, out: File, container: String) {
