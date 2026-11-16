@@ -1,5 +1,15 @@
 package com.tensei.ytxtube
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.style.TextAlign
+import kotlinx.coroutines.delay
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -124,6 +134,9 @@ import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
 
+private object ColdStartSplashState {
+    var hasPlayed = false
+}
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
     internal var playerHolder: PlayerState? = null
@@ -142,7 +155,20 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        setContent { YtxTubeTheme { YtxTubeApp() } }
+                val shouldPlayWelcome = savedInstanceState == null && !ColdStartSplashState.hasPlayed
+        if (shouldPlayWelcome) {
+            ColdStartSplashState.hasPlayed = true
+        }
+        setContent {
+            YtxTubeTheme {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    YtxTubeApp()
+                    if (shouldPlayWelcome) {
+                        SunilSonuLiquidGlassSplash()
+                    }
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -1174,4 +1200,160 @@ internal fun parseYouTubeLink(text: String): YouTubeLinkTarget? {
         return YouTubeLinkTarget(text, false)
     }
     return null
+}
+@Composable
+private fun SunilSonuLiquidGlassSplash() {
+    val context = LocalContext.current
+    var visible by remember { mutableStateOf(true) }
+    val logoScale = remember { Animatable(0.45f) }
+    val logoAlpha = remember { Animatable(0f) }
+    val textAlpha = remember { Animatable(0f) }
+    val textOffsetY = remember { Animatable(28f) }
+
+    val appIconBitmap = remember {
+        runCatching {
+            val drawable = context.packageManager.getApplicationIcon(context.applicationInfo)
+            val w = drawable.intrinsicWidth.coerceAtLeast(192)
+            val h = drawable.intrinsicHeight.coerceAtLeast(192)
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bmp.asImageBitmap()
+        }.getOrNull()
+    }
+
+    LaunchedEffect(Unit) {
+        launch {
+            logoAlpha.animateTo(1f, animationSpec = tween(320))
+        }
+        launch {
+            logoScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow,
+                ),
+            )
+        }
+        delay(240)
+        launch {
+            textAlpha.animateTo(1f, animationSpec = tween(420, easing = FastOutSlowInEasing))
+        }
+        launch {
+            textOffsetY.animateTo(0f, animationSpec = tween(420, easing = FastOutSlowInEasing))
+        }
+        delay(1350)
+        visible = false
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(150)),
+        exit = fadeOut(tween(380)),
+    ) {
+        val primary = MaterialTheme.colorScheme.primary
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            primary.copy(alpha = 0.28f),
+                            Color(0xFF0B0D14).copy(alpha = 0.94f),
+                            Color(0xFF06070B).copy(alpha = 0.98f),
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            val glassShape = RoundedCornerShape(32.dp)
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 28.dp)
+                    .shadow(24.dp, glassShape)
+                    .clip(glassShape)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.18f),
+                                primary.copy(alpha = 0.12f),
+                                Color.White.copy(alpha = 0.06f),
+                            )
+                        )
+                    )
+                    .border(
+                        width = 1.2.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.62f),
+                                primary.copy(alpha = 0.45f),
+                                Color.White.copy(alpha = 0.18f),
+                            )
+                        ),
+                        shape = glassShape,
+                    )
+                    .padding(horizontal = 30.dp, vertical = 34.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .graphicsLayer {
+                            scaleX = logoScale.value
+                            scaleY = logoScale.value
+                            alpha = logoAlpha.value
+                        }
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.25f),
+                                    primary.copy(alpha = 0.22f),
+                                )
+                            )
+                        )
+                        .border(1.5.dp, Color.White.copy(alpha = 0.55f), CircleShape)
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (appIconBitmap != null) {
+                        Image(
+                            bitmap = appIconBitmap,
+                            contentDescription = "Sunil Sonu YouTube",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                Column(
+                    modifier = Modifier.graphicsLayer {
+                        alpha = textAlpha.value
+                        translationY = textOffsetY.value
+                    },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "SSYOUTUBE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 2.4.sp,
+                        color = Color.White.copy(alpha = 0.72f),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    androidx.compose.material3.Text(
+                        text = "Welcome to Sunil Sonu YouTube",
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 27.sp,
+                    )
+                }
+            }
+        }
+    }
 }
