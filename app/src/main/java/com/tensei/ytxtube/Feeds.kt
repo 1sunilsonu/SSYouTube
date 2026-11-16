@@ -26,10 +26,6 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -41,21 +37,23 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
 
 @Stable
 class FeedState(
     private val scope: CoroutineScope,
-    
-
-
-
-
     private val freshOnRefresh: Boolean = false,
     private val loader: suspend (next: String?) -> FeedPage,
 ) {
@@ -118,10 +116,6 @@ class FeedState(
         }
     }
 
-    
-
-
-
     private suspend fun loadFresh(): FeedPage {
         val first = loader(null)
         val fresh = LinkedHashMap<String, VideoItem>()
@@ -154,7 +148,6 @@ class FeedState(
         else -> t.message?.takeIf { it.startsWith("YouTube") } ?: YouTube.friendlyError(t)
     }
 }
-
 
 @Stable
 class LibraryData(scope: CoroutineScope) {
@@ -193,7 +186,7 @@ class LibraryData(scope: CoroutineScope) {
 
         val recent = SearchHistory.queries.take(3)
         if (recent.isNotEmpty()) {
-            return kotlinx.coroutines.coroutineScope {
+            return coroutineScope {
                 val primaryDef = async { YouTube.searchPage(recent[0], null) }
                 val secondaryDefs = recent.drop(1).map { q ->
                     async { runCatching { YouTube.searchPage(q, null).videos.take(6) }.getOrDefault(emptyList()) }
@@ -220,7 +213,7 @@ class LibraryData(scope: CoroutineScope) {
             }
         }
 
-        return kotlinx.coroutines.coroutineScope {
+        return coroutineScope {
             val hindiSongsDef = async {
                 runCatching { YouTube.searchPage("latest hindi punjabi songs official video", null) }
                     .getOrDefault(FeedPage(emptyList(), null))
@@ -279,16 +272,6 @@ class LibraryData(scope: CoroutineScope) {
     }
 }
 
-        home.reset(); subscriptions.reset(); history.reset()
-        channels = emptyList(); playlists = emptyList()
-    }
-}
-
-
-
-
-
-
 @Composable
 fun rememberScrollToTop(signal: Int): LazyListState {
     val state = rememberLazyListState()
@@ -296,7 +279,6 @@ fun rememberScrollToTop(signal: Int): LazyListState {
     LaunchedEffect(signal) { if (signal != initial) state.animateScrollToItem(0) }
     return state
 }
-
 
 @Composable
 fun FeedList(
@@ -306,13 +288,9 @@ fun FeedList(
     header: LazyListScope.() -> Unit = {},
     scrollToTop: Int = 0,
     pullToRefresh: Boolean = true,
-
     indicatorTop: Dp = 0.dp,
-
     videos: List<VideoItem>? = null,
-
     filterScrollKey: Any? = null,
-
     channelAvatarSeed: Map<String, String?> = emptyMap(),
 ) {
     val c = MaterialTheme.colorScheme
@@ -324,16 +302,17 @@ fun FeedList(
     val list = rememberScrollToTop(scrollToTop)
 
     LaunchedEffect(feed.generation, filterScrollKey) { list.scrollToItem(0) }
-        LaunchedEffect(list.isScrollInProgress, listVideos) {
+
+    LaunchedEffect(list.isScrollInProgress, listVideos) {
         if (!list.isScrollInProgress && listVideos.isNotEmpty()) {
-            kotlinx.coroutines.delay(350L)
+            delay(350L)
             val validIds = listVideos.mapTo(HashSet()) { it.id }
             val visibleIds = list.layoutInfo.visibleItemsInfo
                 .mapNotNull { it.key as? String }
                 .filter { it in validIds }
                 .take(2)
             visibleIds.forEach { videoId ->
-                launch(kotlinx.coroutines.Dispatchers.IO) {
+                launch(Dispatchers.IO) {
                     val info = runCatching { StreamCache.getOrLoad(videoId) }.getOrNull() ?: return@launch
                     val streamUrl = info.videoOnlyStreams.firstOrNull { it.isUrl }?.content
                         ?: info.videoStreams.firstOrNull { it.isUrl }?.content
@@ -342,8 +321,8 @@ fun FeedList(
                 }
             }
         }
-        }
-        
+    }
+
     val nearEnd by remember {
         derivedStateOf {
             val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -352,39 +331,33 @@ fun FeedList(
     }
     LaunchedEffect(nearEnd, listVideos.size) { if (nearEnd && listVideos.isNotEmpty()) feed.loadMore() }
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
-    LazyColumn(state = list, contentPadding = contentPadding) {
-        header()
-        items(listVideos, key = { it.id }) { video ->
-            VideoCard(
-                video,
-                onClick = { onOpen(video) },
-                modifier = Modifier.animateItem(),
-            )
-        }
-        when {
-
-
-            feed.error != null && listVideos.isEmpty() -> item {
-                EmptyState(
-                    icon = Icons.Rounded.CloudOff,
-                    title = "Couldn't load this",
-                    body = feed.error.orEmpty(),
-                    action = { PillButton("Try again", { feed.refresh() }) },
+        LazyColumn(state = list, contentPadding = contentPadding) {
+            header()
+            items(listVideos, key = { it.id }) { video ->
+                VideoCard(
+                    video,
+                    onClick = { onOpen(video) },
+                    modifier = Modifier.animateItem(),
                 )
             }
-            feed.loading || feed.hasMore -> item {
-                Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
-                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+            when {
+                feed.error != null && listVideos.isEmpty() -> item {
+                    EmptyState(
+                        icon = Icons.Rounded.CloudOff,
+                        title = "Couldn't load this",
+                        body = feed.error.orEmpty(),
+                        action = { PillButton("Try again", { feed.refresh() }) },
+                    )
+                }
+                feed.loading || feed.hasMore -> item {
+                    Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
+                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                    }
                 }
             }
         }
     }
-    }
 }
-
-
-
-
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
