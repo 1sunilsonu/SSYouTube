@@ -39,15 +39,6 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
 
-
-
-
-
-
-
-
-
-
 @Composable
 fun CollapsingHeaderLayout(
     resetKey: Any? = null,
@@ -71,7 +62,6 @@ fun CollapsingHeaderLayout(
                 val h = headerPx.toFloat()
                 if (h <= 0f || consumed.y == 0f) return Offset.Zero
 
-
                 val target = (offset.value + consumed.y).coerceIn(-h, 0f)
                 scope.launch { offset.snapTo(target) }
                 return Offset.Zero
@@ -91,6 +81,16 @@ fun CollapsingHeaderLayout(
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val headerBackdrop = rememberLayerBackdrop()
+    val headerBg = if (GlassQuality.effectsSupported) {
+        Brush.verticalGradient(
+            0f to c.surface.copy(alpha = 0.94f),
+            0.58f to c.surface.copy(alpha = 0.72f),
+            1f to c.surface.copy(alpha = 0.0f),
+        )
+    } else {
+        Brush.verticalGradient(listOf(c.surface, c.surface))
+    }
+
     Box(Modifier.fillMaxSize().nestedScroll(connection)) {
         Box(Modifier.fillMaxSize().layerBackdrop(headerBackdrop)) {
             content(with(density) { headerPx.toDp() })
@@ -112,22 +112,16 @@ fun CollapsingHeaderLayout(
                 .onSizeChanged { headerPx = it.height }
                 .graphicsLayer {
                     translationY = offset.value
-
                     alpha = if (headerPx > 0) 1f - 0.5f * (-offset.value / headerPx).coerceIn(0f, 1f) else 1f
                 }
-                .background(c.surface),
+                .background(headerBg),
         ) {
             CompositionLocalProvider(LocalGlassBackdrop provides headerBackdrop) { header() }
         }
     }
 }
 
-
 const val VignetteAlpha = 0.76f
-
-
-
-
 
 fun vignetteBrush(color: Color, opaqueAtTop: Boolean): Brush {
     val stops = 12
@@ -139,6 +133,5 @@ fun vignetteBrush(color: Color, opaqueAtTop: Boolean): Brush {
         },
     )
 }
-
 
 fun PaddingValues.withTop(top: Dp) = PaddingValues(top = top, bottom = calculateBottomPadding())
