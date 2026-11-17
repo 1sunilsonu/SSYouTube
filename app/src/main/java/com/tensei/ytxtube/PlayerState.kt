@@ -190,9 +190,20 @@ class PlayerState(private val scope: CoroutineScope) {
     var captionText by mutableStateOf<String?>(null)
         private set
 
-    private var likeOverrides by mutableStateOf>(emptyMap())
-    private var likeDeltas by mutableStateOf>(emptyMap())
-    private var dislikeDeltas by mutableStateOf>(emptyMap())
+    private val likeOverridesState = mutableStateOf>(emptyMap())
+    private var likeOverrides: Map<String, LikeStatus>
+        get() = likeOverridesState.value
+        set(value) { likeOverridesState.value = value }
+
+    private val likeDeltasState = mutableStateOf>(emptyMap())
+    private var likeDeltas: Map<String, Long>
+        get() = likeDeltasState.value
+        set(value) { likeDeltasState.value = value }
+
+    private val dislikeDeltasState = mutableStateOf>(emptyMap())
+    private var dislikeDeltas: Map<String, Long>
+        get() = dislikeDeltasState.value
+        set(value) { dislikeDeltasState.value = value }
 
     val currentLike: LikeStatus
         get() = current?.id?.let { likeOverrides[it] } ?: accountState?.like ?: LikeStatus.None
@@ -578,9 +589,11 @@ class PlayerState(private val scope: CoroutineScope) {
         val id = current?.id ?: return
         val before = currentLike
         val next = if (before == target) LikeStatus.None else target
+        val wDiff: Long = likeWeight(next) - likeWeight(before)
+        val dDiff: Long = dislikeWeight(next) - dislikeWeight(before)
         likeOverrides = likeOverrides + (id to next)
-        likeDeltas = likeDeltas + (id to ((likeDeltas[id] ?: 0L) + likeWeight(next) - likeWeight(before)))
-        dislikeDeltas = dislikeDeltas + (id to ((dislikeDeltas[id] ?: 0L) + dislikeWeight(next) - dislikeWeight(before)))
+        likeDeltas = likeDeltas + (id to ((likeDeltas[id] ?: 0L) + wDiff))
+        dislikeDeltas = dislikeDeltas + (id to ((dislikeDeltas[id] ?: 0L) + dDiff))
         actionMessage = when (next) {
             LikeStatus.Like -> "Liked"
             LikeStatus.Dislike -> "Not for me"
@@ -595,8 +608,8 @@ class PlayerState(private val scope: CoroutineScope) {
                 .onFailure {
                     if (current?.id == id) {
                         likeOverrides = likeOverrides + (id to before)
-                        likeDeltas = likeDeltas + (id to ((likeDeltas[id] ?: 0L) - likeWeight(next) + likeWeight(before)))
-                        dislikeDeltas = dislikeDeltas + (id to ((dislikeDeltas[id] ?: 0L) - dislikeWeight(next) + dislikeWeight(before)))
+                        likeDeltas = likeDeltas + (id to ((likeDeltas[id] ?: 0L) - wDiff))
+                        dislikeDeltas = dislikeDeltas + (id to ((dislikeDeltas[id] ?: 0L) - dDiff))
                         accountState = previousAccount
                         actionMessage = "Couldn't update your like."
                     }
