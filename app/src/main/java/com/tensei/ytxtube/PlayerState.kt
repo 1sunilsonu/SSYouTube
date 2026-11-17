@@ -190,20 +190,11 @@ class PlayerState(private val scope: CoroutineScope) {
     var captionText by mutableStateOf<String?>(null)
         private set
 
-    private val likeOverridesState = mutableStateOf>(emptyMap())
-    private var likeOverrides: Map<String, LikeStatus>
-        get() = likeOverridesState.value
-        set(value) { likeOverridesState.value = value }
-
-    private val likeDeltasState = mutableStateOf>(emptyMap())
-    private var likeDeltas: Map<String, Long>
-        get() = likeDeltasState.value
-        set(value) { likeDeltasState.value = value }
-
-    private val dislikeDeltasState = mutableStateOf>(emptyMap())
-    private var dislikeDeltas: Map<String, Long>
-        get() = dislikeDeltasState.value
-        set(value) { dislikeDeltasState.value = value }
+    private val emptyLikeMap: Map<String, LikeStatus> = emptyMap()
+    private val emptyDeltaMap: Map<String, Long> = emptyMap()
+    private var likeOverrides by mutableStateOf(emptyLikeMap)
+    private var likeDeltas by mutableStateOf(emptyDeltaMap)
+    private var dislikeDeltas by mutableStateOf(emptyDeltaMap)
 
     val currentLike: LikeStatus
         get() = current?.id?.let { likeOverrides[it] } ?: accountState?.like ?: LikeStatus.None
