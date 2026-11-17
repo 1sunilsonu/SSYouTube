@@ -2,11 +2,9 @@ package com.tensei.ytxtube
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,17 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,14 +42,16 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import org.schabi.newpipe.extractor.Page
 
 val LocalChannelOpener = staticCompositionLocalOf<(String) -> Unit> { {} }
 
@@ -225,60 +220,31 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
 
 @Composable
 fun ChannelTabStrip(selected: ChannelTab, onSelect: (ChannelTab) -> Unit, modifier: Modifier = Modifier) {
-    val isDark = isDarkTheme()
-    val isAmoled = ThemeSettings.mode == "amoled"
-    Row(
+    val c = MaterialTheme.colorScheme
+    val entries = ChannelTab.entries
+    val selectedIndex = entries.indexOf(selected).coerceAtLeast(0)
+    val stripBackdrop = rememberLayerBackdrop()
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        ChannelTab.entries.forEach { tab ->
-            val isSelected = tab == selected
-            val background by animateColorAsState(
-                targetValue = when {
-                    isSelected -> if (isDark || isAmoled) Color.White else Color.Black
-                    isAmoled -> Color(0xFF161616)
-                    isDark -> Color(0xFF272727)
-                    else -> Color(0xFFE5E5E5)
-                },
-                animationSpec = tween(220, easing = Motion.Emphasized),
-                label = "channelTabBackground",
-            )
-            val foreground by animateColorAsState(
-                targetValue = when {
-                    isSelected -> if (isDark || isAmoled) Color.Black else Color.White
-                    isDark || isAmoled -> Color.White
-                    else -> Color(0xFF0F0F0F)
-                },
-                animationSpec = tween(180, easing = Motion.Emphasized),
-                label = "channelTabForeground",
-            )
-            val scale by animateFloatAsState(
-                targetValue = if (isSelected) 1f else 0.94f,
-                animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
-                label = "channelTabScale",
-            )
-            Box(
-                modifier = Modifier
-                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(background)
-                    .pressable(pressedScale = 0.94f) { onSelect(tab) }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    tab.label,
-                    color = foreground,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    softWrap = false,
-                )
-            }
-        }
+        Box(
+            Modifier
+                .matchParentSize()
+                .clip(CircleShape)
+                .layerBackdrop(stripBackdrop)
+                .background(c.surfaceContainerHigh),
+        )
+        LiquidGlassSliderTabs(
+            options = entries.map { it.label },
+            selectedIndex = selectedIndex,
+            onSelect = { idx -> entries.getOrNull(idx)?.let(onSelect) },
+            backdrop = stripBackdrop,
+            height = 40.dp,
+            fontSize = 12.5.sp,
+            accentSelectedText = true,
+        )
     }
 }
 
@@ -305,150 +271,152 @@ fun ChannelScreen(
         }
     }
     Box(Modifier.fillMaxSize().background(c.surface)) {
-    CollapsingHeaderLayout(
-        header = {
-        BackScreenHeader(onBack = onBack) {
-            ChannelNameWithBadge(
-                state.details?.name.orEmpty(),
-                verified = state.details?.verified == true,
-                modifier = Modifier.weight(1f),
-                fontSize = 22.sp,
-                maxLines = 1,
-                letterSpacing = (-0.6).sp,
-            )
-        }
-        },
-    ) { top ->
-        val d = state.details
-        when {
-            d == null && state.error != null -> Box(Modifier.padding(top = top)) { EmptyState(
-                Icons.Rounded.CloudOff, "Couldn't load this channel", state.error.orEmpty(),
-                action = { PillButton("Try again", state::load) },
-            ) }
-            d == null -> Box(Modifier.fillMaxWidth().padding(top = top + 60.dp), Alignment.Center) {
-                CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
-            }
-            else -> LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
-                item(key = "header") {
-                    AnimatedVisibility(
-                        visible = true,
-                        enter = fadeIn(tween(260, easing = Motion.Emphasized)) +
-                            slideInVertically(tween(320, easing = Motion.Emphasized)) { it / 8 },
-                    ) {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        if (d.banner != null) {
-                            Thumbnail(d.banner, Modifier.fillMaxWidth().aspectRatio(5.6f), radius = 12)
-                            Spacer(Modifier.height(16.dp))
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            ChannelAvatar(d.avatar, d.name, size = 76)
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                ChannelNameWithBadge(d.name, verified = d.verified, maxLines = 2)
-                                d.handle?.let { handle ->
-                                    Spacer(Modifier.height(2.dp))
-                                    Text("@$handle", color = c.onSurfaceVariant, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                channelStatLine(d.subscribers, d.videoCount).takeIf { it.isNotBlank() }?.let { stats ->
-                                    Text(stats, color = c.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
-                        state.subscribed?.let { subscribed ->
-                            Spacer(Modifier.height(14.dp))
-                            ChannelSubscribeButton(subscribed) { state.toggleSubscribe(onMessage) }
-                        }
-                        if (d.description.isNotBlank()) {
-                            Spacer(Modifier.height(12.dp))
-                            Text(d.description, color = c.onSurfaceVariant, fontSize = 13.5.sp, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                    }
+        CollapsingHeaderLayout(
+            header = {
+                BackScreenHeader(onBack = onBack) {
+                    ChannelNameWithBadge(
+                        state.details?.name.orEmpty(),
+                        verified = state.details?.verified == true,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 22.sp,
+                        maxLines = 1,
+                        letterSpacing = (-0.6).sp,
+                    )
                 }
-                item(key = "tabs") {
-                    ChannelTabStrip(selected = state.activeTab, onSelect = { state.selectTab(it) })
+            },
+        ) { top ->
+            val d = state.details
+            when {
+                d == null && state.error != null -> Box(Modifier.padding(top = top)) {
+                    EmptyState(
+                        Icons.Rounded.CloudOff, "Couldn't load this channel", state.error.orEmpty(),
+                        action = { PillButton("Try again", state::load) },
+                    )
                 }
-                when (state.activeTab) {
-                    ChannelTab.Videos -> {
-                        items(state.videos, key = { it.id }) { video ->
-                            VideoCard(video, onClick = { onOpen(video) }, modifier = Modifier.animateItem())
-                        }
-                        if (state.loading || state.hasMore) item {
-                            Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
-                                CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                d == null -> Box(Modifier.fillMaxWidth().padding(top = top + 60.dp), Alignment.Center) {
+                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
+                }
+                else -> LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
+                    item(key = "header") {
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(tween(260, easing = Motion.Emphasized)) +
+                                slideInVertically(tween(320, easing = Motion.Emphasized)) { it / 8 },
+                        ) {
+                            Column(Modifier.padding(horizontal = 16.dp)) {
+                                if (d.banner != null) {
+                                    Thumbnail(d.banner, Modifier.fillMaxWidth().aspectRatio(5.6f), radius = 12)
+                                    Spacer(Modifier.height(16.dp))
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ChannelAvatar(d.avatar, d.name, size = 76)
+                                    Spacer(Modifier.width(14.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        ChannelNameWithBadge(d.name, verified = d.verified, maxLines = 2)
+                                        d.handle?.let { handle ->
+                                            Spacer(Modifier.height(2.dp))
+                                            Text("@$handle", color = c.onSurfaceVariant, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        channelStatLine(d.subscribers, d.videoCount).takeIf { it.isNotBlank() }?.let { stats ->
+                                            Text(stats, color = c.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        }
+                                    }
+                                }
+                                state.subscribed?.let { subscribed ->
+                                    Spacer(Modifier.height(14.dp))
+                                    ChannelSubscribeButton(subscribed) { state.toggleSubscribe(onMessage) }
+                                }
+                                if (d.description.isNotBlank()) {
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(d.description, color = c.onSurfaceVariant, fontSize = 13.5.sp, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                }
                             }
                         }
                     }
-                    ChannelTab.Shorts -> {
-                        if (state.shortsLoading && state.shorts.isEmpty()) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) {
-                                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-                                }
+                    item(key = "tabs") {
+                        ChannelTabStrip(selected = state.activeTab, onSelect = { state.selectTab(it) })
+                    }
+                    when (state.activeTab) {
+                        ChannelTab.Videos -> {
+                            items(state.videos, key = { it.id }) { video ->
+                                VideoCard(video, onClick = { onOpen(video) }, modifier = Modifier.animateItem())
                             }
-                        } else if (state.shorts.isEmpty()) {
-                            item {
-                                EmptyState(
-                                    Icons.Rounded.CloudOff,
-                                    "No Shorts yet",
-                                    "This channel hasn't posted any Shorts.",
-                                )
-                            }
-                        } else {
-                            items(state.shorts.chunked(3), key = { row -> row.first().id }) { row ->
-                                ShortsRow(row, onOpenShort, Modifier.animateItem())
-                            }
-                            if (state.shortsLoading) item {
+                            if (state.loading || state.hasMore) item {
                                 Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
                                     CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
                                 }
                             }
                         }
-                    }
-                    ChannelTab.Live -> {
-                        if (state.liveLoading) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) {
-                                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                        ChannelTab.Shorts -> {
+                            if (state.shortsLoading && state.shorts.isEmpty()) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) {
+                                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                                    }
                                 }
-                            }
-                        } else if (state.liveVideos.isEmpty()) {
-                            item {
-                                EmptyState(
-                                    Icons.Rounded.CloudOff,
-                                    "No live streams",
-                                    "This channel has no active live streams or past live broadcasts.",
-                                )
-                            }
-                        } else {
-                            items(state.liveVideos, key = { it.id }) { video ->
-                                VideoCard(video, onClick = { onOpen(video) }, modifier = Modifier.animateItem())
+                            } else if (state.shorts.isEmpty()) {
+                                item {
+                                    EmptyState(
+                                        Icons.Rounded.CloudOff,
+                                        "No Shorts yet",
+                                        "This channel hasn't posted any Shorts.",
+                                    )
+                                }
+                            } else {
+                                items(state.shorts.chunked(3), key = { row -> row.first().id }) { row ->
+                                    ShortsRow(row, onOpenShort, Modifier.animateItem())
+                                }
+                                if (state.shortsLoading) item {
+                                    Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
+                                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                                    }
+                                }
                             }
                         }
-                    }
-                    ChannelTab.Community -> {
-                        if (state.communityLoading) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) {
-                                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                        ChannelTab.Live -> {
+                            if (state.liveLoading) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) {
+                                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                                    }
+                                }
+                            } else if (state.liveVideos.isEmpty()) {
+                                item {
+                                    EmptyState(
+                                        Icons.Rounded.CloudOff,
+                                        "No live streams",
+                                        "This channel has no active live streams or past live broadcasts.",
+                                    )
+                                }
+                            } else {
+                                items(state.liveVideos, key = { it.id }) { video ->
+                                    VideoCard(video, onClick = { onOpen(video) }, modifier = Modifier.animateItem())
                                 }
                             }
-                        } else if (state.communityPosts.isEmpty()) {
-                            item {
-                                EmptyState(
-                                    Icons.Rounded.CloudOff,
-                                    "No community posts",
-                                    "This channel hasn't posted anything to their community tab yet.",
-                                )
+                        }
+                        ChannelTab.Community -> {
+                            if (state.communityLoading) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) {
+                                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                                    }
+                                }
+                            } else if (state.communityPosts.isEmpty()) {
+                                item {
+                                    EmptyState(
+                                        Icons.Rounded.CloudOff,
+                                        "No community posts",
+                                        "This channel hasn't posted anything to their community tab yet.",
+                                    )
+                                }
+                            } else {
+                                items(state.communityPosts, key = { it.id }) { post -> CommunityCard(post) }
                             }
-                        } else {
-                            items(state.communityPosts, key = { it.id }) { post -> CommunityCard(post) }
                         }
                     }
                 }
             }
         }
-    }
     }
 }
 
