@@ -2,7 +2,6 @@ package com.tensei.ytxtube
 
 import android.Manifest
 import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -1129,7 +1128,7 @@ private fun SunilSonuLiquidGlassSplash() {
     val logoScale = remember { Animatable(0.45f) }
     val logoAlpha = remember { Animatable(0f) }
     val textAlpha = remember { Animatable(0f) }
-    val textOffsetY = remember { Animatable(28f) }
+    val textOffsetY = remember { Animatable(24f) }
 
     val appIconBitmap = remember {
         runCatching {
@@ -1157,7 +1156,7 @@ private fun SunilSonuLiquidGlassSplash() {
                 ),
             )
         }
-        delay(240)
+        delay(220)
         launch {
             textAlpha.animateTo(1f, animationSpec = tween(420, easing = FastOutSlowInEasing))
         }
@@ -1170,57 +1169,59 @@ private fun SunilSonuLiquidGlassSplash() {
 
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(150)),
-        exit = fadeOut(tween(380)),
+        enter = fadeIn(tween(120)),
+        exit = fadeOut(tween(360)),
     ) {
         val primary = MaterialTheme.colorScheme.primary
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color(0xFF06070B))
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            primary.copy(alpha = 0.28f),
-                            Color(0xFF0B0D14).copy(alpha = 0.94f),
-                            Color(0xFF06070B).copy(alpha = 0.98f),
+                            primary.copy(alpha = 0.34f),
+                            Color(0xFF0C0E17),
+                            Color(0xFF06070B),
                         )
                     )
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            val glassShape = RoundedCornerShape(32.dp)
+            val glassShape = RoundedCornerShape(34.dp)
             Column(
                 modifier = Modifier
-                    .padding(horizontal = 28.dp)
-                    .shadow(24.dp, glassShape)
+                    .padding(horizontal = 32.dp)
+                    .widthIn(min = 270.dp, max = 330.dp)
+                    .shadow(28.dp, glassShape)
                     .clip(glassShape)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.18f),
-                                primary.copy(alpha = 0.12f),
-                                Color.White.copy(alpha = 0.06f),
+                                Color.White.copy(alpha = 0.22f),
+                                primary.copy(alpha = 0.14f),
+                                Color.White.copy(alpha = 0.07f),
                             )
                         )
                     )
                     .border(
-                        width = 1.2.dp,
+                        width = 1.4.dp,
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.62f),
-                                primary.copy(alpha = 0.45f),
-                                Color.White.copy(alpha = 0.18f),
+                                Color.White.copy(alpha = 0.72f),
+                                primary.copy(alpha = 0.50f),
+                                Color.White.copy(alpha = 0.22f),
                             )
                         ),
                         shape = glassShape,
                     )
-                    .padding(horizontal = 30.dp, vertical = 34.dp),
+                    .padding(horizontal = 32.dp, vertical = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(96.dp)
+                        .size(92.dp)
                         .graphicsLayer {
                             scaleX = logoScale.value
                             scaleY = logoScale.value
@@ -1230,13 +1231,13 @@ private fun SunilSonuLiquidGlassSplash() {
                         .background(
                             Brush.linearGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.25f),
-                                    primary.copy(alpha = 0.22f),
+                                    Color.White.copy(alpha = 0.28f),
+                                    primary.copy(alpha = 0.24f),
                                 )
                             )
                         )
-                        .border(1.5.dp, Color.White.copy(alpha = 0.55f), CircleShape)
-                        .padding(14.dp),
+                        .border(1.5.dp, Color.White.copy(alpha = 0.62f), CircleShape)
+                        .padding(12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (appIconBitmap != null) {
@@ -1248,7 +1249,7 @@ private fun SunilSonuLiquidGlassSplash() {
                     }
                 }
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(22.dp))
 
                 Column(
                     modifier = Modifier.graphicsLayer {
@@ -1257,21 +1258,30 @@ private fun SunilSonuLiquidGlassSplash() {
                     },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    androidx.compose.material3.Text(
-                        text = "SSYOUTUBE",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 2.4.sp,
-                        color = Color.White.copy(alpha = 0.72f),
+                    Text(
+                        text = "Welcome to",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.82f),
+                        textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(6.dp))
-                    androidx.compose.material3.Text(
-                        text = "Welcome to Sunil Sonu YouTube",
-                        fontSize = 21.sp,
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Sunil Sonu",
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = Color.White,
                         textAlign = TextAlign.Center,
-                        lineHeight = 27.sp,
+                        letterSpacing = 0.4.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "YouTube",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primary,
+                        textAlign = TextAlign.Center,
+                        letterSpacing = 1.2.sp,
                     )
                 }
             }
