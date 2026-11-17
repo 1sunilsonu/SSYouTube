@@ -1,14 +1,20 @@
 package com.tensei.ytxtube
 
+import android.content.ContentUris
 import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat as AndroidMediaFormat
 import android.media.MediaMuxer
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.FileObserver
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -16,6 +22,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import java.io.File
+import java.io.IOException
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.max
+import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -34,22 +48,10 @@ import org.schabi.newpipe.extractor.MediaFormat as StreamFormat
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.VideoStream
-import java.io.File
-import java.io.IOException
-import java.io.RandomAccessFile
-import java.nio.ByteBuffer
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
-import kotlin.math.max
-import kotlin.math.min
 
 private const val TAG = "YTXTubeDl"
 
 enum class DownloadStatus { Queued, Downloading, Processing, Paused, Complete, Failed }
-
-
-
-
 
 @Stable
 class DownloadTask(
@@ -84,11 +86,10 @@ class DownloadTask(
             else -> 0f
         }
 
-    val file: File get() = Downloads.fileFor(fileName)
+    val file: File get() = Downloads.resolveExistingFile(fileName)
     val localUri: String get() = Uri.fromFile(file).toString()
     val played: Boolean get() = status == DownloadStatus.Complete && file.exists()
 }
-
 
 data class DownloadOption(
     val height: Int,
@@ -103,14 +104,6 @@ data class DownloadOption(
     val label: String get() = "${height}p${if (hdr) " HDR" else ""}"
     val containerLabel: String get() = if (container == "webm") "WebM" else "MP4"
 }
-
-
-
-
-
-
-
-
 
 object Downloads {
     private const val MAX_ACTIVE = 2
@@ -127,7 +120,6 @@ object Downloads {
                 it.status == DownloadStatus.Processing
         }
 
-
     val progress: Float
         get() {
             val active = tasks.filter {
@@ -141,10 +133,12 @@ object Downloads {
     private var appContext: Context? = null
     private lateinit var prefs: android.content.SharedPreferences
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val jobs = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
     private val pumpLock = Any()
     private val lastPersist = ConcurrentHashMap<String, Long>()
     private val lastReport = ConcurrentHashMap<String, Long>()
+    private var dirObserver: FileObserver? = null
 
     private const val KEY_CUSTOM_DIR = "custom_download_dir"
 
@@ -153,6 +147,21 @@ object Downloads {
     fun defaultDownloadDir(): File {
         val pubDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         return File(pubDownloads, "YTXTube Downloads")
+    }
+
+    private fun musicFolderDir(): File {
+        val pubMusic = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+        return File(pubMusic, "YTXTube")
+    }
+
+    fun resolveExistingFile(name: String): File {
+        val primary = fileFor(name)
+        if (primary.exists()) return primary
+        val defFile = File(defaultDownloadDir(), name)
+        if (defFile.exists()) return defFile
+        val musicFile = File(musicFolderDir(), name)
+        if (musicFile.exists()) return musicFile
+        return primary
     }
 
     fun init(context: Context) {
@@ -168,6 +177,8 @@ object Downloads {
         dir = targetDir.apply { runCatching { mkdirs() } }
         initialized = true
         restore()
+        syncWithStorage()
+        startWatchingDir()
         persist()
     }
 
@@ -175,16 +186,57 @@ object Downloads {
         runCatching { newDir.mkdirs() }
         dir = newDir
         prefs.edit().putString(KEY_CUSTOM_DIR, newDir.absolutePath).apply()
+        startWatchingDir()
+        syncWithStorage()
     }
 
     fun resetToDefaultDownloadDir() {
         val def = defaultDownloadDir().apply { runCatching { mkdirs() } }
         dir = def
         prefs.edit().remove(KEY_CUSTOM_DIR).apply()
+        startWatchingDir()
+        syncWithStorage()
     }
 
     fun fileFor(name: String): File = File(dir, name)
 
+    fun syncWithStorage() {
+        if (!initialized) return
+        scope.launch {
+            val missing = tasks.filter { task ->
+                task.status == DownloadStatus.Complete && !resolveExistingFile(task.fileName).exists()
+            }
+            if (missing.isNotEmpty()) {
+                mainHandler.post {
+                    if (tasks.removeAll(missing.toSet())) {
+                        persist()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startWatchingDir() {
+        runCatching { dirObserver?.stopWatching() }
+        if (!::dir.isInitialized) return
+        val mask = FileObserver.DELETE or FileObserver.MOVED_FROM or FileObserver.DELETE_SELF
+        dirObserver = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                object : FileObserver(dir, mask) {
+                    override fun onEvent(event: Int, path: String?) {
+                        syncWithStorage()
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                object : FileObserver(dir.absolutePath, mask) {
+                    override fun onEvent(event: Int, path: String?) {
+                        syncWithStorage()
+                    }
+                }
+            }
+        }.getOrNull()?.also { runCatching { it.startWatching() } }
+    }
 
     suspend fun options(id: String): List<DownloadOption> = withContext(Dispatchers.IO) {
         val info = StreamCache.getOrLoad(id)
@@ -218,7 +270,6 @@ object Downloads {
                 return@mapNotNull option(height, muxedAt, null, null, info, "mp4", false)
             }
 
-            // MP4/H.264 is the most compatible choice through 1080p.
             val avc = sdr.filter {
                 it.format == StreamFormat.MPEG_4 && it.codec.orEmpty().startsWith("avc")
             }.maxByOrNull { it.bitrate }
@@ -226,7 +277,6 @@ object Downloads {
                 return@mapNotNull option(height, null, avc, audioMp4, info, "mp4", false)
             }
 
-            // 1440p/2160p: VP9 WebM + Opus, muxed by MediaMuxer on Android 10+.
             val vp9 = sdr.filter {
                 it.format == StreamFormat.WEBM && it.codec.orEmpty().startsWith("vp9")
             }.maxByOrNull { it.bitrate }
@@ -241,7 +291,6 @@ object Downloads {
                 return@mapNotNull option(height, null, av1, audioMp4, info, "mp4", false)
             }
 
-            // A video that only ships HDR at this height is still downloadable.
             val hdrVp9 = hdr.filter {
                 it.format == StreamFormat.WEBM && it.codec.orEmpty().startsWith("vp9")
             }.maxByOrNull { it.bitrate }
@@ -285,14 +334,25 @@ object Downloads {
         .maxByOrNull { max(it.averageBitrate, it.bitrate) }
 
     val musicDownloads: List<DownloadTask>
-        get() = tasks.filter { (it.height == 0 || it.fileName.endsWith(".m4a")) && it.status == DownloadStatus.Complete }
+        get() = tasks.filter {
+            (it.height == 0 || it.fileName.endsWith(".m4a") || it.fileName.endsWith(".mp3")) &&
+                it.status == DownloadStatus.Complete &&
+                resolveExistingFile(it.fileName).exists()
+        }
 
     fun enqueueMusic(video: VideoItem): Boolean = enqueueAudio(video)
 
     fun enqueueAudio(video: VideoItem): Boolean {
         if (!initialized) return false
+        syncWithStorage()
         val key = "${video.id}@0"
-        if (tasks.any { it.key == key }) return false
+        tasks.firstOrNull { it.key == key }?.let { existing ->
+            if (existing.status == DownloadStatus.Complete && !resolveExistingFile(existing.fileName).exists()) {
+                tasks.remove(existing)
+            } else {
+                return false
+            }
+        }
         val name = fileNameFor(video, 0)
         val task = DownloadTask(
             videoId = video.id,
@@ -312,8 +372,15 @@ object Downloads {
 
     fun enqueue(video: VideoItem, option: DownloadOption): Boolean {
         if (!initialized) return false
+        syncWithStorage()
         val key = "${video.id}@${option.height}"
-        if (tasks.any { it.key == key }) return false
+        tasks.firstOrNull { it.key == key }?.let { existing ->
+            if (existing.status == DownloadStatus.Complete && !resolveExistingFile(existing.fileName).exists()) {
+                tasks.remove(existing)
+            } else {
+                return false
+            }
+        }
         val name = fileNameFor(video, option.height, option.container, option.hdr)
         val task = DownloadTask(
             videoId = video.id,
@@ -354,45 +421,93 @@ object Downloads {
         pump()
     }
 
-    fun remove(task: DownloadTask) {
-        jobs.remove(task.key)?.cancel()
-        tasks.remove(task)
-        deleteWork(task)
-        task.file.delete()
-        persist()
-        pump()
-    }
+    private fun deleteFromDiskAndMediaStore(fileName: String) {
+        val candidates = listOf(
+            fileFor(fileName),
+            File(defaultDownloadDir(), fileName),
+            File(musicFolderDir(), fileName),
+        ).distinctBy { it.absolutePath }
 
-
-    fun clearAll() {
-        if (!initialized) return
-        jobs.values.forEach { it.cancel() }
-        jobs.clear()
-        tasks.toList().forEach { task ->
-            deleteWork(task)
-            runCatching { task.file.delete() }
-        }
-        tasks.clear()
-        lastPersist.clear()
-        lastReport.clear()
-        prefs.edit().putString(PERSIST_KEY, "[]").apply()
-
-        runCatching { dir.listFiles()?.forEach { if (it.isFile && it.name.endsWith(".part")) it.delete() } }
-    }
-
-    /** Permanently deletes all downloaded video/music files and clears all tasks. */
-    fun deleteAllDownloadsAndWork() {
-        clearAll()
-        runCatching {
-            val d = currentDownloadDir
-            if (d.exists() && d.isDirectory) {
-                d.listFiles()?.forEach { file ->
-                    if (file.isFile) file.delete()
+        candidates.forEach { file ->
+            val absPath = file.absolutePath
+            runCatching { if (file.exists()) file.delete() }
+            appContext?.let { ctx ->
+                runCatching {
+                    val uri = MediaStore.Files.getContentUri("external")
+                    @Suppress("DEPRECATION")
+                    ctx.contentResolver.delete(
+                        uri,
+                        "${MediaStore.MediaColumns.DATA}=?",
+                        arrayOf(absPath),
+                    )
+                }
+                runCatching {
+                    val audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    @Suppress("DEPRECATION")
+                    ctx.contentResolver.delete(
+                        audioUri,
+                        "${MediaStore.MediaColumns.DATA}=?",
+                        arrayOf(absPath),
+                    )
+                }
+                runCatching {
+                    val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    @Suppress("DEPRECATION")
+                    ctx.contentResolver.delete(
+                        videoUri,
+                        "${MediaStore.MediaColumns.DATA}=?",
+                        arrayOf(absPath),
+                    )
+                }
+                runCatching {
+                    MediaScannerConnection.scanFile(ctx, arrayOf(absPath), null, null)
                 }
             }
         }
     }
 
+    fun remove(task: DownloadTask) {
+        jobs.remove(task.key)?.cancel()
+        tasks.remove(task)
+        deleteWork(task)
+        scope.launch {
+            deleteFromDiskAndMediaStore(task.fileName)
+        }
+        persist()
+        pump()
+    }
+
+    fun clearAll() {
+        if (!initialized) return
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
+        val snapshot = tasks.toList()
+        tasks.clear()
+        lastPersist.clear()
+        lastReport.clear()
+        prefs.edit().putString(PERSIST_KEY, "[]").apply()
+        scope.launch {
+            snapshot.forEach { task ->
+                deleteWork(task)
+                deleteFromDiskAndMediaStore(task.fileName)
+            }
+            runCatching { dir.listFiles()?.forEach { if (it.isFile && it.name.endsWith(".part")) it.delete() } }
+        }
+    }
+
+    fun deleteAllDownloadsAndWork() {
+        clearAll()
+        scope.launch {
+            runCatching {
+                val d = currentDownloadDir
+                if (d.exists() && d.isDirectory) {
+                    d.listFiles()?.forEach { file ->
+                        if (file.isFile) deleteFromDiskAndMediaStore(file.name)
+                    }
+                }
+            }
+        }
+    }
     private fun pump() {
         synchronized(pumpLock) {
             while (jobs.size < MAX_ACTIVE) {
@@ -405,7 +520,6 @@ object Downloads {
         }
     }
 
-    
     private suspend fun execute(task: DownloadTask) {
         var attempt = 0
         try {
@@ -457,7 +571,7 @@ object Downloads {
             if (received != remote.total || work.length() != remote.total) {
                 throw IOException("Audio download incomplete (${work.length()} of ${remote.total} bytes)")
             }
-            val target = task.file
+            val target = fileFor(task.fileName)
             target.delete()
             if (!work.renameTo(target)) {
                 work.copyTo(target, overwrite = true)
@@ -466,7 +580,7 @@ object Downloads {
             task.total = target.length()
             task.downloaded = task.total
             task.status = DownloadStatus.Complete
-            appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(target.absolutePath), null, null) }
+            appContext?.let { MediaScannerConnection.scanFile(it, arrayOf(target.absolutePath), null, null) }
             return
         }
 
@@ -484,7 +598,7 @@ object Downloads {
             if (received != remote.total || work.length() != remote.total) {
                 throw IOException("Download incomplete (${work.length()} of ${remote.total} bytes)")
             }
-            val target = task.file
+            val target = fileFor(task.fileName)
             target.delete()
             if (!work.renameTo(target)) {
                 work.copyTo(target, overwrite = true)
@@ -526,7 +640,7 @@ object Downloads {
             task.status = DownloadStatus.Processing
             persist()
 
-            val target = task.file
+            val target = fileFor(task.fileName)
             target.delete()
             mux(vWork, aWork, target, option.container)
             vWork.delete()
@@ -538,9 +652,9 @@ object Downloads {
 
         task.error = null
         task.status = DownloadStatus.Complete
-        appContext?.let { android.media.MediaScannerConnection.scanFile(it, arrayOf(task.file.absolutePath), null, null) }
+        appContext?.let { MediaScannerConnection.scanFile(it, arrayOf(fileFor(task.fileName).absolutePath), null, null) }
         persist()
-        Log.i(TAG, "download ${task.key} complete: ${task.file.length()} bytes")
+        Log.i(TAG, "download ${task.key} complete: ${fileFor(task.fileName).length()} bytes")
     }
 
     private fun report(task: DownloadTask, done: Long) {
@@ -749,7 +863,7 @@ object Downloads {
         }
         return downloaded
     }
-    
+
     private fun withRange(url: String, start: Long, end: Long): String {
         val parsed = url.toHttpUrlOrNull() ?: return url
         return parsed.newBuilder()
@@ -758,7 +872,6 @@ object Downloads {
             .build()
             .toString()
     }
-    
 
     private fun mux(video: File, audio: File, out: File, container: String) {
         if (container == "webm" && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -840,7 +953,7 @@ object Downloads {
         return null
     }
 
-        private fun fileNameFor(video: VideoItem, height: Int, container: String = "mp4", hdr: Boolean = false): String {
+    private fun fileNameFor(video: VideoItem, height: Int, container: String = "mp4", hdr: Boolean = false): String {
         val safe = video.title
             .replace(Regex("[\\\\/:*?\"<>|\\n\\r\\t]"), " ")
             .replace(Regex("\\s+"), " ")
@@ -851,20 +964,19 @@ object Downloads {
         val hdrTag = if (hdr) " HDR" else ""
         val extension = if (container == "webm") "webm" else "mp4"
         return "$safe [${height}p$hdrTag] - SSYouTube.$extension"
-        }  
+    }
 
     private fun workFile(task: DownloadTask, kind: String): File =
         File(dir, "${task.videoId}_${task.height}_$kind.part")
 
     private fun deleteWork(task: DownloadTask) {
-    val v = workFile(task, "video")
-    val a = workFile(task, "audio")
-    File(v.parentFile, "${v.name}.chk").delete()
-    File(a.parentFile, "${a.name}.chk").delete()
-    v.delete()
-    a.delete()
+        val v = workFile(task, "video")
+        val a = workFile(task, "audio")
+        File(v.parentFile, "${v.name}.chk").delete()
+        File(a.parentFile, "${a.name}.chk").delete()
+        v.delete()
+        a.delete()
     }
-    
 
     private fun persist() {
         if (!initialized) return
@@ -920,13 +1032,11 @@ object Downloads {
                     total = json.optLong("total", -1L),
                     status = if (status == DownloadStatus.Complete) status else DownloadStatus.Paused,
                 )
-                if (status == DownloadStatus.Complete && !task.file.exists()) continue
+                if (status == DownloadStatus.Complete && !resolveExistingFile(name).exists()) continue
                 if (tasks.any { it.fileName == name }) continue
                 tasks.add(task)
             }
         }.onFailure { Log.w(TAG, "could not restore downloads", it) }
-
-
 
         runCatching {
             val existing = tasks.mapTo(HashSet()) { it.fileName }
@@ -935,9 +1045,10 @@ object Downloads {
                 val name = f.name
                 if (name.endsWith(".part") || name.startsWith(".")) return@forEach
                 if (!existing.add(name)) return@forEach
-                val audio = name.endsWith(".m4a")
+                val audio = name.endsWith(".m4a") || name.endsWith(".mp3")
                 val ext = when {
-                    audio -> ".m4a"
+                    name.endsWith(".mp3") -> ".mp3"
+                    name.endsWith(".m4a") -> ".m4a"
                     name.endsWith(".webm") -> ".webm"
                     else -> ".mp4"
                 }
@@ -972,16 +1083,16 @@ object Downloads {
     }
 
     fun clearFinished() {
-        tasks.filter { it.status == DownloadStatus.Complete }.forEach { task ->
-            tasks.remove(task)
-            task.file.delete()
+        val finished = tasks.filter { it.status == DownloadStatus.Complete }
+        tasks.removeAll(finished.toSet())
+        scope.launch {
+            finished.forEach { deleteFromDiskAndMediaStore(it.fileName) }
         }
         persist()
     }
 
     private class HttpStatusException(val code: Int) : IOException("HTTP $code")
 }
-
 
 fun DownloadTask.toVideoItem(): VideoItem = VideoItem(
     id = videoId,
