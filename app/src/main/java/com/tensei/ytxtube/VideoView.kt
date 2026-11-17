@@ -5,8 +5,8 @@ import android.content.Context
 import android.media.AudioManager
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.keyframes
@@ -16,17 +16,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -34,8 +30,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
@@ -44,15 +40,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.VolumeMute
@@ -62,7 +58,6 @@ import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CropFree
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
@@ -78,28 +73,17 @@ import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Repeat
-import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.ZoomIn
-import androidx.compose.ui.composed
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalView
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -112,6 +96,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -121,6 +106,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -132,6 +118,9 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -139,23 +128,19 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.media3.ui.compose.PlayerSurface
-import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
-
-
-
-
-
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun VideoContent(
@@ -165,20 +150,15 @@ fun VideoContent(
     onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
     controlsAlpha: () -> Float = { 1f },
-
     interactive: Boolean = true,
     onInactiveTap: () -> Unit = {},
-
     portraitEdgeScrub: Boolean = false,
 ) {
-
-
     var controlsVisible by remember { mutableStateOf(false) }
     var touchedAt by remember { mutableLongStateOf(0L) }
     fun touched() { touchedAt = System.nanoTime() }
     SideEffect { state.videoControlsVisible = controlsVisible }
     LaunchedEffect(controlsVisible, state.isPlaying, touchedAt) {
-        // A TV remote has no way to bring hidden controls back on its own, so they stay up.
         if (controlsVisible && state.isPlaying && !TvMode.isTv) {
             delay(Motion.ControlsHideMs)
             controlsVisible = false
@@ -190,8 +170,6 @@ fun VideoContent(
         animationSpec = if (reduced) tween(0) else tween(160, easing = Motion.Emphasized),
         label = "controlsAlpha",
     )
-
-
 
     var burstSide by remember { mutableIntStateOf(1) }
     var burstSeconds by remember { mutableIntStateOf(0) }
@@ -289,7 +267,6 @@ fun VideoContent(
         val doubleTapMs = viewConfiguration.doubleTapTimeoutMillis
         val holdSpeedMs = Motion.HoldSpeedMs
         coroutineScope {
-
             var seekWindow: Job? = null
             var pendingSide = 0
             var pendingAt = 0L
@@ -366,8 +343,6 @@ fun VideoContent(
                                     lastY = change.position.y
                                 }
                             } else {
-
-
                                 if (!verticalSwipeHandled && isVerticalIntent && kotlin.math.abs(totalDy) > 90f) {
                                     verticalSwipeHandled = true
                                     change.consume()
@@ -454,8 +429,6 @@ fun VideoContent(
                         scaleY = (1f + 0.03f * n) * z
                     },
             ) {
-
-
                 Thumbnail(
                     state.current?.thumbnail,
                     Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f },
@@ -555,7 +528,6 @@ fun VideoContent(
                 Modifier
             }
             Box(Modifier.fillMaxSize().then(edge)) {
-
                 Row(
                     Modifier
                         .align(Alignment.TopStart)
@@ -587,7 +559,6 @@ fun VideoContent(
                         Spacer(Modifier.weight(1f))
                     }
 
-
                     GlassButton(
                         if (state.zoomToFill) Icons.Rounded.AspectRatio else Icons.Rounded.CropFree,
                         if (state.zoomToFill) "Fit to screen" else "Fill screen",
@@ -602,7 +573,6 @@ fun VideoContent(
                     }
                     Spacer(Modifier.width(6.dp))
 
-
                     if (pip?.supported == true) {
                         GlassButton(Icons.Rounded.PictureInPictureAlt, "Picture-in-picture", enabled, size = 32.dp, iconSize = 18.dp, backdrop = videoBackdrop) {
                             controlsVisible = false
@@ -610,7 +580,6 @@ fun VideoContent(
                         }
                         Spacer(Modifier.width(6.dp))
                     }
-
 
                     GlassButton(Icons.Rounded.Settings, "Playback settings", enabled, size = 32.dp, iconSize = 20.dp, backdrop = videoBackdrop) {
                         touched()
@@ -640,7 +609,6 @@ fun VideoContent(
                         playing = state.isPlaying,
                         buffering = state.isBuffering || (state.loading && state.details == null),
                         size = if (fullscreen) 70.dp else 61.dp,
-
                         container = Color.Transparent,
                         content = Color.White,
                         enabled = enabled,
@@ -711,7 +679,6 @@ fun VideoContent(
                 }
             }
         }
-
         val captionText = state.captionText
         if (!scrubbing && captionText != null) {
             val captionLift by animateDpAsState(
@@ -737,7 +704,6 @@ fun VideoContent(
                 portraitEdgeScrub -> Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-
                     .offset(y = EdgeScrubTouchPadBelow)
                     .height(EdgeScrubTouchHeight)
                     .graphicsLayer { alpha = scrubFade }
@@ -811,12 +777,6 @@ fun VideoContent(
         }
     }
 }
-
-
-
-
-
-
 
 @Composable
 fun AudioOnlyStage(
@@ -905,10 +865,6 @@ private fun TonalSkip(icon: ImageVector, description: String, enabled: Boolean, 
     ) { Icon(icon, description, tint = c.onSurface, modifier = Modifier.size(34.dp)) }
 }
 
-
-
-
-
 fun Modifier.aspectFit(aspect: Float, cover: Boolean = false) = layout { measurable, constraints ->
     val boxW = constraints.maxWidth.toFloat()
     val boxH = if (constraints.hasBoundedHeight) constraints.maxHeight.toFloat() else boxW / aspect
@@ -921,10 +877,6 @@ fun Modifier.aspectFit(aspect: Float, cover: Boolean = false) = layout { measura
         placeable.place(((boxW - w) / 2f).roundToInt(), ((boxH - h) / 2f).roundToInt())
     }
 }
-
-
-
-
 
 @Composable
 fun FullscreenPlayer(state: PlayerState, onExit: () -> Unit) {
@@ -952,7 +904,6 @@ private fun HoldSpeedPill(modifier: Modifier = Modifier) {
     )
 }
 
-
 @Composable
 private fun SkipSegmentPill(segment: SponsorBlock.Segment, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
@@ -969,7 +920,6 @@ private fun SkipSegmentPill(segment: SponsorBlock.Segment, enabled: Boolean, mod
         Icon(Icons.Rounded.SkipNext, null, tint = ink, modifier = Modifier.size(18.dp))
     }
 }
-
 
 @Composable
 private fun SkippedNote(state: PlayerState, modifier: Modifier) {
@@ -997,65 +947,124 @@ private fun SkippedNote(state: PlayerState, modifier: Modifier) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val details = state.details ?: return
     val chosen = QualityPreference.height
     val chosenHdr = QualityPreference.hdr
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surfaceContainerLow,
-    ) {
+    var showAdvanced by remember { mutableStateOf(chosen != null) }
+    val activeResLabel = state.decodedHeight?.let { "${it}p" } ?: chosen?.let { "${it}p" } ?: "Auto"
+
+    val qualities = details.qualities.ifEmpty {
+        if (state.current?.isLive == true || details.item.isLive) {
+            listOf(1080, 720, 480, 360, 240, 144)
+        } else {
+            listOf(1080, 720, 480, 360, 240, 144)
+        }
+    }
+
+    LiquidGlassOverlayCard(onDismiss = onDismiss, centered = false) {
+        Box(
+            Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 10.dp, bottom = 6.dp)
+                .size(width = 38.dp, height = 4.dp)
+                .clip(CircleShape)
+                .background(c.onSurfaceVariant.copy(alpha = 0.35f)),
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 20.dp)
-                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 22.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Quality",
-                    fontFamily = RoundedHeavy,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                state.playingFormat?.let {
-                    Text(it, color = c.onSurfaceVariant, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
-                }
-            }
+            Text(
+                text = "Quality for current video  ·  $activeResLabel",
+                color = c.onSurface.copy(alpha = 0.85f),
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+            )
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
 
-            QualityRow("Auto", "Adapts to your internet speed", chosen == null) {
-                state.setQuality(null)
-                onDismiss()
-            }
-
-            val qualities = details.qualities.ifEmpty {
-                if (state.current?.isLive == true || details.item.isLive) {
-                    listOf(1080, 720, 480, 360, 240, 144)
-                } else emptyList()
-            }
-            qualities.forEach { h ->
-                QualityRow("${h}p", qualityTag(h), chosen == h && !chosenHdr) {
-                    state.setQuality(h, preferHdr = false)
+            if (!showAdvanced) {
+                QualityPresetRow(
+                    title = "Auto (recommended)",
+                    subtitle = "Adjusts to give you the best experience for your conditions",
+                    selected = chosen == null,
+                ) {
+                    state.setQuality(null)
                     onDismiss()
                 }
-            }
-            details.hdrQualities.forEach { h ->
-                QualityRow("${h}p HDR", listOfNotNull("HDR", qualityTag(h)).joinToString(" · "), chosen == h && chosenHdr) {
-                    state.setQuality(h, preferHdr = true)
+                QualityPresetRow(
+                    title = "Higher picture quality",
+                    subtitle = "Uses more data",
+                    selected = chosen != null && chosen >= 720,
+                ) {
+                    val target = qualities.firstOrNull { it >= 720 } ?: qualities.maxOrNull() ?: 720
+                    state.setQuality(target, preferHdr = false)
                     onDismiss()
                 }
+                QualityPresetRow(
+                    title = "Data saver",
+                    subtitle = "Lower picture quality",
+                    selected = chosen != null && chosen <= 360,
+                ) {
+                    val target = qualities.lastOrNull { it <= 360 } ?: 240
+                    state.setQuality(target, preferHdr = false)
+                    onDismiss()
+                }
+                QualityPresetRow(
+                    title = "Advanced",
+                    subtitle = "Select a specific resolution",
+                    selected = false,
+                ) {
+                    showAdvanced = true
+                }
+            } else {
+                QualityPresetRow(
+                    title = "Auto (recommended)",
+                    subtitle = "Adapts to your internet speed",
+                    selected = chosen == null,
+                ) {
+                    state.setQuality(null)
+                    onDismiss()
+                }
+                qualities.forEach { h ->
+                    QualityPresetRow(
+                        title = "${h}p",
+                        subtitle = qualityTag(h),
+                        selected = chosen == h && !chosenHdr,
+                    ) {
+                        state.setQuality(h, preferHdr = false)
+                        onDismiss()
+                    }
+                }
+                details.hdrQualities.forEach { h ->
+                    QualityPresetRow(
+                        title = "${h}p HDR",
+                        subtitle = listOfNotNull("HDR", qualityTag(h)).joinToString(" · "),
+                        selected = chosen == h && chosenHdr,
+                    ) {
+                        state.setQuality(h, preferHdr = true)
+                        onDismiss()
+                    }
+                }
             }
+
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = c.onSurface.copy(alpha = 0.10f))
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "This selection only applies to the current video.",
+                color = c.onSurfaceVariant,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 6.dp),
+            )
         }
     }
 }
@@ -1070,46 +1079,52 @@ private fun qualityTag(height: Int): String? = when {
 }
 
 @Composable
-private fun QualityRow(title: String, subtitle: String?, selected: Boolean, onClick: () -> Unit) {
+private fun QualityPresetRow(
+    title: String,
+    subtitle: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     val c = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .pressable(pressedScale = 0.98f, onClick = onClick)
-            .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) c.primaryContainer else Color.Transparent)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 6.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            title,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-            fontSize = 14.5.sp,
-            color = if (selected) c.onPrimaryContainer else c.onSurface,
-            modifier = Modifier.weight(1f)
-        )
-        if (subtitle != null) {
-            Text(
-                subtitle,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (selected) c.onPrimaryContainer.copy(alpha = 0.8f) else c.onSurfaceVariant
-            )
+        Box(
+            modifier = Modifier.width(30.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (selected) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = "Selected",
+                    tint = c.onSurface,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
-        if (selected) {
-            Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.Check, "Selected", tint = c.onPrimaryContainer, modifier = Modifier.size(17.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = c.onSurface,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = c.onSurfaceVariant,
+                )
+            }
         }
     }
 }
-
-
-
-
-
-
-
 
 @Composable
 fun PlayerSettingsSheet(state: PlayerState, backdrop: Backdrop, onDismiss: () -> Unit) {
@@ -1176,7 +1191,6 @@ fun PlayerSettingsSheet(state: PlayerState, backdrop: Backdrop, onDismiss: () ->
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
-
                 val qualityText = (state.decodedHeight?.let { "${it}p" } ?: state.details?.quality) ?: "Auto"
                 PlayerSettingItem(
                     icon = Icons.Rounded.HighQuality,
@@ -1187,7 +1201,6 @@ fun PlayerSettingsSheet(state: PlayerState, backdrop: Backdrop, onDismiss: () ->
                         state.sheet = PlayerSheet.Quality
                     }
                 )
-
 
                 PlayerSettingItem(
                     icon = Icons.Rounded.Speed,
@@ -1220,14 +1233,12 @@ fun PlayerSettingsSheet(state: PlayerState, backdrop: Backdrop, onDismiss: () ->
                     }
                 )
 
-
                 PlayerSettingItem(
                     icon = Icons.Rounded.Repeat,
                     title = "Loop video",
                     value = if (state.loopEnabled) "On" else "Off",
                     onClick = { state.toggleLoop() }
                 )
-
 
                 PlayerSettingItem(
                     icon = Icons.Rounded.PlayCircle,
@@ -1236,14 +1247,12 @@ fun PlayerSettingsSheet(state: PlayerState, backdrop: Backdrop, onDismiss: () ->
                     onClick = { state.toggleAutoPlay() }
                 )
 
-
                 PlayerSettingItem(
                     icon = if (state.zoomToFill) Icons.Rounded.AspectRatio else Icons.Rounded.CropFree,
                     title = "Video aspect",
                     value = if (state.zoomToFill) "Zoom to fill" else "Fit to screen",
                     onClick = { state.toggleZoomToFill() }
                 )
-
 
                 val zoomText = if (state.videoZoom > 1.05f) "${(state.videoZoom * 10).toInt() / 10f}× (Reset)" else "1.0×"
                 PlayerSettingItem(
@@ -1252,9 +1261,6 @@ fun PlayerSettingsSheet(state: PlayerState, backdrop: Backdrop, onDismiss: () ->
                     value = zoomText,
                     onClick = { state.resetZoom() }
                 )
-
-                
-
 
                 state.playingFormat?.let { format ->
                     PlayerSettingItem(
@@ -1352,7 +1358,6 @@ private fun GlassButton(
 
 private const val SeekStepMs = 10_000L
 
-/** YouTube-style caption plate: black rounded box, white centred text, no chrome. */
 @Composable
 private fun CaptionOverlay(text: String, modifier: Modifier = Modifier) {
     Box(
@@ -1374,12 +1379,6 @@ private fun CaptionOverlay(text: String, modifier: Modifier = Modifier) {
 }
 
 private const val SeekBurstWindowMs = 600L
-
-
-
-
-
-
 
 @Composable
 private fun SeekBurstPill(side: Int, seconds: Int, taps: Int, active: Boolean, fullscreen: Boolean) {
@@ -1457,10 +1456,6 @@ private fun SeekBurstPill(side: Int, seconds: Int, taps: Int, active: Boolean, f
     }
 }
 
-
-
-
-
 @Composable
 fun MorphPlayButton(
     playing: Boolean,
@@ -1509,7 +1504,6 @@ fun MorphPlayButton(
 
 private val ScrubberActiveRed = Color(0xFFFF0033)
 
-
 internal val EdgeScrubTouchPadAbove = 14.dp
 internal val EdgeScrubTouchPadBelow = 36.dp
 internal val EdgeScrubTouchHeight = EdgeScrubTouchPadAbove + EdgeScrubTouchPadBelow
@@ -1518,7 +1512,6 @@ private val EdgeScrubTimeRowBottomPad = EdgeScrubTouchPadAbove + 6.dp
 private val EdgeScrubTimeRowHeight = 34.dp
 
 private val FullscreenControlsHorizontalPad = 20.dp
-
 
 private fun Modifier.fullscreenControlsHorizontalInsets(): Modifier = composed {
     val layoutDirection = LocalLayoutDirection.current
@@ -1543,11 +1536,6 @@ private val FullscreenTimeRowBottomFromEdge: Dp
 
 private val FullscreenScrubKnob = 5.dp
 private val FullscreenScrubKnobDragging = 6.dp
-
-
-
-
-
 
 @Composable
 private fun Scrubber(
