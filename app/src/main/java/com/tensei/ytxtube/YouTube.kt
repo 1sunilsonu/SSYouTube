@@ -12,16 +12,16 @@ import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.Page
-import org.schabi.newpipe.extractor.channel.ChannelInfo
-import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
-import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
-import org.schabi.newpipe.extractor.kiosk.KioskInfo
-import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.channel.ChannelInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
 import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
 import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import org.schabi.newpipe.extractor.kiosk.KioskInfo
+import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
+import org.schabi.newpipe.extractor.localization.DateWrapper
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.AudioStream
@@ -33,7 +33,6 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
 import org.schabi.newpipe.extractor.stream.SubtitlesStream
 import org.schabi.newpipe.extractor.stream.VideoStream
-import org.schabi.newpipe.extractor.localization.DateWrapper
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
@@ -55,18 +54,15 @@ data class VideoItem(
     val durationSec: Long,
     val views: Long,
     val uploaded: String?,
-
     val localUri: String? = null,
     val isLive: Boolean = false,
 )
-
 
 fun VideoItem.channelId(): String? =
     channelUrl?.substringAfter("/channel/", "")?.substringBefore('?')?.takeIf { it.startsWith("UC") && it.length > 2 }
 
 fun VideoItem.fromChannel(ref: ChannelRef): Boolean =
     channelId() == ref.id || channel.equals(ref.name, ignoreCase = true)
-
 
 fun VideoItem.feedAvatar(): String? =
     avatar?.let(::normalizeChannelAvatarUrl)
@@ -98,13 +94,9 @@ data class VideoDetails(
     val subscribers: Long,
     val related: List<VideoItem>,
     val playable: Boolean,
-
     val quality: String?,
-
     val qualities: List<Int>,
-
     val hdrQualities: List<Int> = emptyList(),
-
     val aspect: Float? = null,
 )
 
@@ -116,9 +108,7 @@ data class ChannelDetails(
     val avatar: String?,
     val banner: String?,
     val subscribers: Long,
-
     val videoCount: Long = -1,
-
     val handle: String? = null,
     val verified: Boolean = false,
     val description: String,
@@ -136,11 +126,8 @@ fun ChannelDetails.withHeader(header: ChannelHeaderMeta): ChannelDetails = copy(
 @Immutable
 data class Comment(
     val id: String,
-
     val author: String,
-
     val channelId: String?,
-
     val name: String? = null,
     val avatar: String?,
     val text: String,
@@ -149,33 +136,19 @@ data class Comment(
     val pinned: Boolean,
     val hearted: Boolean,
     val replyCount: Int,
-
     val repliesToken: String?,
-
     val liked: Boolean = false,
 )
 
 @Immutable
 data class CommentsPage(val comments: List<Comment>, val total: Int, val disabled: Boolean, val next: String?)
 
-
 object YouTube {
     private val service get() = ServiceList.YouTube
 
     fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
 
-    
-
-
-
-
-
-
-
-
     suspend fun trending(next: String? = null): FeedPage = withContext(Dispatchers.IO) {
-
-
         val extractor = service.kioskList.getExtractorById("Trending", null)
         val items: List<StreamInfoItem>
         val nextPage: String?
@@ -189,7 +162,6 @@ object YouTube {
             nextPage = more.nextPage?.url
         }
 
-
         val videos = items.mapNotNull { it.toVideoItem() }.filter { !it.isLive }
         FeedPage(videos, nextPage)
     }
@@ -201,7 +173,7 @@ object YouTube {
             .mapNotNull { it.toVideoItem() }
     }
 
-        private val searchPages = ConcurrentHashMap<String, Page>()
+    private val searchPages = ConcurrentHashMap<String, Page>()
 
     private fun stashSearchPage(page: Page?): String? {
         if (page == null) return null
@@ -226,7 +198,6 @@ object YouTube {
             FeedPage(items, next)
         }
     }
-    
 
     suspend fun searchMusic(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
         val q = query.trim()
@@ -330,8 +301,6 @@ object YouTube {
         }.getOrDefault(emptyList())
     }
 
-
-
     suspend fun channel(url: String): ChannelDetails = withContext(Dispatchers.IO) {
         val info = ChannelInfo.getInfo(service, url)
         val videosTab = info.tabs.firstOrNull { it.contentFilters.contains(ChannelTabs.VIDEOS) }
@@ -355,10 +324,6 @@ object YouTube {
         if (!path.startsWith("@")) return null
         return path.removePrefix("@").substringBefore('/').substringBefore('?').ifBlank { null }
     }
-
-    
-
-
 
     suspend fun channelVideos(channel: ChannelDetails, token: String?): FeedPage {
         val page = InnerTube.channelVideos(channel.id, token)
@@ -404,13 +369,8 @@ object YouTube {
         )
     }
 
-
     private fun List<Image>.bestUrl(targetWidth: Int = 1080): String? =
         filter { it.width > 0 }.minByOrNull { abs(it.width - targetWidth) }?.url ?: firstOrNull()?.url
-
-    
-
-
 
     private fun uploadedText(textual: String?, date: DateWrapper?): String? {
         val then = date?.offsetDateTime()?.toInstant()
@@ -437,17 +397,12 @@ object YouTube {
         }
     }
 
-
     fun friendlyError(t: Throwable): String = when (t) {
         is AgeRestrictedContentException -> "This video is age-restricted and needs a YouTube account to watch."
         is GeographicRestrictionException -> "This video isn't available in your country."
         is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException ->
-
-
             "YouTube is blocking this video for a moment. Try again in a minute, or switch networks."
         is org.schabi.newpipe.extractor.exceptions.PrivateContentException -> "This video is private."
-
-
         is ContentNotAvailableException ->
             if (t.message.orEmpty().contains("member", ignoreCase = true) || t is org.schabi.newpipe.extractor.exceptions.PaidContentException)
                 "This is a members-only video. YTXTube can't play members-only videos yet."
@@ -458,31 +413,17 @@ object YouTube {
     }
 }
 
-
-
-
-
-
 object StreamCache {
     private const val MAX_AGE_MS = 4 * 60 * 60 * 1000L
     private class Entry(val info: StreamInfo, val loadedAt: Long)
     private val entries = ConcurrentHashMap<String, Entry>()
 
-    
-
-
-
     fun invalidate(id: String) { entries.remove(id) }
-
 
     fun invalidateAll() = entries.clear()
 
     fun get(id: String): StreamInfo? =
         entries[id]?.takeIf { System.currentTimeMillis() - it.loadedAt < MAX_AGE_MS }?.info
-
-    
-
-
 
     private val inflight = ConcurrentHashMap<String, FutureTask<StreamInfo>>()
 
@@ -498,7 +439,6 @@ object StreamCache {
                 }
             } catch (t: Throwable) {
                 if (t is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException) {
-
                     entries.remove(id)
                     StreamInfo.getInfo(ServiceList.YouTube, YouTube.watchUrl(id)).also {
                         entries[id] = Entry(it, System.currentTimeMillis())
@@ -520,12 +460,6 @@ object StreamCache {
         }
     }
 
-
-    /**
-     * Shorts and the next-up queue can resolve several videos at once; a single prefetch thread
-     * used to make the tapped video wait behind an unrelated prefetch. Four lanes keep the
-     * critical one moving without hammering YouTube.
-     */
     private val prefetcher = Executors.newFixedThreadPool(4)
 
     fun prefetch(id: String) {
@@ -537,11 +471,6 @@ object StreamCache {
         ids.forEach(::prefetch)
     }
 }
-
-
-
-
-
 enum class PlaybackQualityMode(val label: String, val subtitle: String) {
     AUTO("Auto (Recommended)", "Optimal quality based on your network speed"),
     HIGH("High Quality", "Play in highest available quality"),
@@ -564,10 +493,11 @@ enum class PlaybackQualityMode(val label: String, val subtitle: String) {
 
     companion object {
         fun fromKey(key: String?): PlaybackQualityMode = when (key?.uppercase()) {
+            "AUTO" -> AUTO
             "HIGH" -> HIGH
             "DATA_SAVER" -> DATA_SAVER
             "SPECIFIC" -> SPECIFIC
-            else -> AUTO
+            else -> SPECIFIC
         }
     }
 }
@@ -579,59 +509,114 @@ object QualityPreference {
     private const val KEY_SHORTS_MODE = "shorts_quality_mode"
     private const val KEY_SPECIFIC_VIDEO = "specific_video_height"
     private const val KEY_SPECIFIC_SHORTS = "specific_shorts_height"
+    private const val DEFAULT_VIDEO_HEIGHT = 360
     private var prefs: SharedPreferences? = null
 
     @Volatile
-    var height: Int? = null
+    var height: Int? = DEFAULT_VIDEO_HEIGHT
         private set
 
     /** Prefer HDR when the screen and a decoder both support it. */
     var hdr by mutableStateOf(false)
         private set
 
-    var videoQualityMode by mutableStateOf(PlaybackQualityMode.AUTO)
+    var videoQualityMode by mutableStateOf(PlaybackQualityMode.SPECIFIC)
         private set
 
-    var shortsQualityMode by mutableStateOf(PlaybackQualityMode.AUTO)
+    var shortsQualityMode by mutableStateOf(PlaybackQualityMode.SPECIFIC)
         private set
 
-    var specificVideoHeight by mutableStateOf<Int?>(null)
+    var specificVideoHeight by mutableStateOf<Int?>(DEFAULT_VIDEO_HEIGHT)
         private set
 
-    var specificShortsHeight by mutableStateOf<Int?>(null)
+    var specificShortsHeight by mutableStateOf<Int?>(DEFAULT_VIDEO_HEIGHT)
         private set
 
     val videoQualityDisplay: String
         get() = when (videoQualityMode) {
-            PlaybackQualityMode.SPECIFIC -> specificVideoHeight?.let { "${it}p (${I18n.t("always", "Always")})" } ?: I18n.t("specific", "Specific")
+            PlaybackQualityMode.SPECIFIC -> "${specificVideoHeight ?: DEFAULT_VIDEO_HEIGHT}p (${I18n.t("always", "Always")})"
             else -> videoQualityMode.displayLabel
         }
 
     val shortsQualityDisplay: String
         get() = when (shortsQualityMode) {
-            PlaybackQualityMode.SPECIFIC -> specificShortsHeight?.let { "${it}p (${I18n.t("always", "Always")})" } ?: I18n.t("specific", "Specific")
+            PlaybackQualityMode.SPECIFIC -> "${specificShortsHeight ?: DEFAULT_VIDEO_HEIGHT}p (${I18n.t("always", "Always")})"
             else -> shortsQualityMode.displayLabel
         }
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
-        height = prefs?.getInt(KEY, 0)?.takeIf { it > 0 }?.takeIf { it in QUALITY_LADDER }
+        val savedModeStr = prefs?.getString(KEY_VIDEO_MODE, null)
+        val savedSpecific = prefs?.getInt(KEY_SPECIFIC_VIDEO, 0)?.takeIf { it > 0 && it in QUALITY_LADDER }
+        val savedLegacy = prefs?.getInt(KEY, 0)?.takeIf { it > 0 && it in QUALITY_LADDER }
+
+        val resolvedMode = if (savedModeStr == null) {
+            PlaybackQualityMode.SPECIFIC
+        } else {
+            PlaybackQualityMode.fromKey(savedModeStr)
+        }
+        val resolvedHeight = (savedSpecific ?: savedLegacy ?: DEFAULT_VIDEO_HEIGHT)
+
+        videoQualityMode = resolvedMode
+        specificVideoHeight = resolvedHeight
+        height = if (resolvedMode == PlaybackQualityMode.SPECIFIC) resolvedHeight else null
         hdr = prefs?.getBoolean(KEY_HDR, HdrSupport.isSupported) ?: HdrSupport.isSupported
-        videoQualityMode = PlaybackQualityMode.fromKey(prefs?.getString(KEY_VIDEO_MODE, "AUTO"))
-        shortsQualityMode = PlaybackQualityMode.fromKey(prefs?.getString(KEY_SHORTS_MODE, "AUTO"))
-        specificVideoHeight = prefs?.getInt(KEY_SPECIFIC_VIDEO, 0)?.takeIf { it > 0 }
-        specificShortsHeight = prefs?.getInt(KEY_SPECIFIC_SHORTS, 0)?.takeIf { it > 0 }
+
+        val savedShortsModeStr = prefs?.getString(KEY_SHORTS_MODE, null)
+        val resolvedShortsMode = if (savedShortsModeStr == null) {
+            PlaybackQualityMode.SPECIFIC
+        } else {
+            PlaybackQualityMode.fromKey(savedShortsModeStr)
+        }
+        val resolvedShortsHeight = prefs?.getInt(KEY_SPECIFIC_SHORTS, 0)
+            ?.takeIf { it > 0 && it in QUALITY_LADDER }
+            ?: DEFAULT_VIDEO_HEIGHT
+
+        shortsQualityMode = resolvedShortsMode
+        specificShortsHeight = resolvedShortsHeight
     }
 
     fun set(value: Int?, preferHdr: Boolean = hdr) {
-        height = value
         hdr = preferHdr
-        prefs?.edit()?.putInt(KEY, value ?: 0)?.putBoolean(KEY_HDR, preferHdr)?.apply()
+        if (value != null && value > 0) {
+            height = value
+            specificVideoHeight = value
+            videoQualityMode = PlaybackQualityMode.SPECIFIC
+            prefs?.edit()
+                ?.putInt(KEY, value)
+                ?.putInt(KEY_SPECIFIC_VIDEO, value)
+                ?.putString(KEY_VIDEO_MODE, PlaybackQualityMode.SPECIFIC.name)
+                ?.putBoolean(KEY_HDR, preferHdr)
+                ?.apply()
+        } else {
+            height = null
+            videoQualityMode = PlaybackQualityMode.AUTO
+            prefs?.edit()
+                ?.putInt(KEY, 0)
+                ?.putString(KEY_VIDEO_MODE, PlaybackQualityMode.AUTO.name)
+                ?.putBoolean(KEY_HDR, preferHdr)
+                ?.apply()
+        }
     }
 
     fun updateVideoQualityMode(mode: PlaybackQualityMode) {
         videoQualityMode = mode
-        prefs?.edit()?.putString(KEY_VIDEO_MODE, mode.name)?.apply()
+        if (mode == PlaybackQualityMode.SPECIFIC) {
+            val h = specificVideoHeight ?: DEFAULT_VIDEO_HEIGHT
+            specificVideoHeight = h
+            height = h
+            prefs?.edit()
+                ?.putString(KEY_VIDEO_MODE, mode.name)
+                ?.putInt(KEY_SPECIFIC_VIDEO, h)
+                ?.putInt(KEY, h)
+                ?.apply()
+        } else {
+            height = null
+            prefs?.edit()
+                ?.putString(KEY_VIDEO_MODE, mode.name)
+                ?.putInt(KEY, 0)
+                ?.apply()
+        }
     }
 
     fun updateShortsQualityMode(mode: PlaybackQualityMode) {
@@ -641,10 +626,12 @@ object QualityPreference {
 
     fun setSpecificVideoQuality(height: Int) {
         specificVideoHeight = height
+        this.height = height
         videoQualityMode = PlaybackQualityMode.SPECIFIC
         prefs?.edit()
             ?.putString(KEY_VIDEO_MODE, PlaybackQualityMode.SPECIFIC.name)
             ?.putInt(KEY_SPECIFIC_VIDEO, height)
+            ?.putInt(KEY, height)
             ?.apply()
     }
 
@@ -658,16 +645,10 @@ object QualityPreference {
     }
 }
 
-
 val QUALITY_LADDER = intArrayOf(144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
-
-
-
-
 
 fun qualityTier(width: Int, height: Int): Int {
     if (height <= 0) return 0
-    // Portrait video (Shorts) is sized by its short side: a 1080x1920 short is 1080p, not 2160p.
     val basis = when {
         width <= 0 -> height
         width < height -> width
@@ -679,7 +660,6 @@ fun qualityTier(width: Int, height: Int): Int {
 
 private fun VideoStream.tier() = qualityTier(width, height)
 
-/** Whether this rendition's real (or typical) bitrate fits the sustainable budget. */
 private fun VideoStream.fitsKbps(budgetKbps: Int): Boolean {
     val bits = bitrate
     val needed = if (bits > 0) bits / 1000 else NetworkSpeed.typicalKbps(tier())
@@ -699,7 +679,6 @@ private fun lowestFirst(formatRank: (MediaFormat?) -> Int): Comparator<VideoStre
         .thenBy { it.bitrate }
         .thenBy { formatRank(it.format) }
 
-
 object StreamSelection {
 
     private const val MAX_TIER = 2160
@@ -714,10 +693,6 @@ object StreamSelection {
         val hdr: Boolean get() = (if (usesSeparate) video else muxed)?.let(HdrSupport::isHdrCodec) == true
     }
 
-    /**
-     * HDR renditions are only used when the viewer asked for HDR and the device can show it.
-     * If HDR is unavailable at the chosen height, the same height in SDR is the fallback.
-     */
     private fun usableVideos(info: StreamInfo, allowHdr: Boolean): List<VideoStream> {
         val all = info.videoOnlyStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 }
@@ -734,27 +709,19 @@ object StreamSelection {
             MediaFormat.WEBM -> 1
             else -> 2
         }
-        val chosen = QualityPreference.height
 
-        // Auto uses the measured throughput, not the link speed: a Wi-Fi link can report
-        // hundreds of megabits while the connection behind it cannot feed 4K. A manual
-        // choice still wins and is honoured as the closest rendition at or below it.
         val hdr = QualityPreference.hdr && HdrSupport.isSupported
         val videoMode = QualityPreference.videoQualityMode
+        val lockedHeight = when (videoMode) {
+            PlaybackQualityMode.SPECIFIC -> QualityPreference.specificVideoHeight ?: QualityPreference.height ?: 360
+            else -> QualityPreference.height
+        }
         val candidates = usableVideos(info, hdr)
         val video = when {
-            chosen != null -> {
+            lockedHeight != null -> {
                 candidates
-                    .filter { it.tier() <= chosen }
+                    .filter { it.tier() <= lockedHeight }
                     .maxWithOrNull(videoOrder(hdr, ::formatRank))
-                    ?: candidates.minWithOrNull(lowestFirst(::formatRank))
-            }
-            videoMode == PlaybackQualityMode.SPECIFIC -> {
-                val target = QualityPreference.specificVideoHeight ?: 1080
-                candidates
-                    .filter { it.tier() <= target }
-                    .maxWithOrNull(videoOrder(hdr, ::formatRank))
-                    ?: candidates.maxWithOrNull(videoOrder(hdr, ::formatRank))
                     ?: candidates.minWithOrNull(lowestFirst(::formatRank))
             }
             videoMode == PlaybackQualityMode.HIGH -> {
@@ -774,22 +741,13 @@ object StreamSelection {
             }
         }
 
-
-
         val audio = selectAudio(info)
         val muxedCandidates = info.videoStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
         val muxed = when {
-            chosen != null -> {
-                muxedCandidates.filter { it.tier() <= chosen }
+            lockedHeight != null -> {
+                muxedCandidates.filter { it.tier() <= lockedHeight }
                     .maxWithOrNull(videoOrder(hdr, ::formatRank))
-                    ?: muxedCandidates.minWithOrNull(lowestFirst(::formatRank))
-            }
-            videoMode == PlaybackQualityMode.SPECIFIC -> {
-                val target = QualityPreference.specificVideoHeight ?: 1080
-                muxedCandidates.filter { it.tier() <= target }
-                    .maxWithOrNull(videoOrder(hdr, ::formatRank))
-                    ?: muxedCandidates.maxWithOrNull(videoOrder(hdr, ::formatRank))
                     ?: muxedCandidates.minWithOrNull(lowestFirst(::formatRank))
             }
             videoMode == PlaybackQualityMode.HIGH -> {
@@ -810,11 +768,6 @@ object StreamSelection {
         return Picked(video, audio, muxed, hls)
     }
 
-    /**
-     * Every logical audio track the extractor can actually serve, Original first. One row per
-     * track (highest bitrate encoding), never one per itag; untagged entries are dropped once the
-     * response names real tracks, because that bucket is the same default audio arriving twice.
-     */
     fun audioTracks(info: StreamInfo): List<AudioTrackOption> {
         val usable = info.audioStreams.filter {
             it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP
@@ -846,34 +799,21 @@ object StreamSelection {
             }
     }
 
-    /** The alternate languages shown in the sheet; Original is its own fixed first row. */
     fun audioOptions(info: StreamInfo): List<AudioTrackOption> =
         audioTracks(info).filterNot { it.isOriginal }
 
-    /**
-     * Audio selection. Original is the default on a fresh install and stays selected until the
-     * viewer explicitly chooses another track; a stale preference falls back to Original rather
-     * than leaving the video silent.
-     */
     fun selectAudio(info: StreamInfo): AudioStream? {
         val tracks = audioTracks(info)
         if (tracks.isEmpty()) return null
         val wanted = AudioTrackPreference.key
         if (wanted != null) {
             tracks.firstOrNull { it.key == wanted }?.let { return it.stream }
-            // Preferences written by the old key format carried the itag as a suffix.
             tracks.firstOrNull { wanted.startsWith(it.key) }?.let { return it.stream }
         }
         return tracks.firstOrNull { it.isOriginal }?.stream ?: tracks.first().stream
     }
 
-    /**
-     * Shorts use the original audio and the best rendition the measured connection can
-     * sustain. A muxed stream is only the fallback when the video has no separable
-     * adaptive pair; it is usually capped at 360p/720p.
-     */
     fun pickShorts(info: StreamInfo): Picked {
-        val chosen = QualityPreference.height
         val hdr = QualityPreference.hdr && HdrSupport.isSupported
         fun order(): Comparator<VideoStream> =
             compareBy<VideoStream> { it.tier() }
@@ -895,15 +835,13 @@ object StreamSelection {
 
         val candidates = usableVideos(info, hdr).filter { it.tier() <= 2160 }
         val shortsMode = QualityPreference.shortsQualityMode
+        val lockedShortsHeight = when (shortsMode) {
+            PlaybackQualityMode.SPECIFIC -> QualityPreference.specificShortsHeight ?: 360
+            else -> null
+        }
         val video = when {
-            chosen != null -> {
-                candidates.filter { it.tier() <= chosen }.maxWithOrNull(order())
-                    ?: candidates.minWithOrNull(lowest())
-            }
-            shortsMode == PlaybackQualityMode.SPECIFIC -> {
-                val target = QualityPreference.specificShortsHeight ?: 1080
-                candidates.filter { it.tier() <= target }.maxWithOrNull(order())
-                    ?: candidates.maxWithOrNull(order())
+            lockedShortsHeight != null -> {
+                candidates.filter { it.tier() <= lockedShortsHeight }.maxWithOrNull(order())
                     ?: candidates.minWithOrNull(lowest())
             }
             shortsMode == PlaybackQualityMode.HIGH -> {
@@ -927,14 +865,8 @@ object StreamSelection {
 
         val muxedCandidates = info.videoStreams.filter { it.isUrl && it.height > 0 }
         val muxed = when {
-            chosen != null -> {
-                muxedCandidates.filter { it.tier() <= chosen }.maxWithOrNull(muxedOrder())
-                    ?: muxedCandidates.minWithOrNull(lowest())
-            }
-            shortsMode == PlaybackQualityMode.SPECIFIC -> {
-                val target = QualityPreference.specificShortsHeight ?: 1080
-                muxedCandidates.filter { it.tier() <= target }.maxWithOrNull(muxedOrder())
-                    ?: muxedCandidates.maxWithOrNull(muxedOrder())
+            lockedShortsHeight != null -> {
+                muxedCandidates.filter { it.tier() <= lockedShortsHeight }.maxWithOrNull(muxedOrder())
                     ?: muxedCandidates.minWithOrNull(lowest())
             }
             shortsMode == PlaybackQualityMode.HIGH -> {
@@ -954,7 +886,6 @@ object StreamSelection {
         return Picked(null, null, muxed)
     }
 
-    /** The best side-loadable caption track for the current caption language. */
     fun subtitleFor(info: StreamInfo): SubtitlesStream? {
         val usable = info.subtitles.filter {
             it.isUrl && it.content.isNotBlank() && subtitleMimeType(it) != null
@@ -970,12 +901,6 @@ object StreamSelection {
     fun hasCaptions(info: StreamInfo): Boolean = info.subtitles.any {
         it.isUrl && it.content.isNotBlank() && subtitleMimeType(it) != null
     }
-
-    
-
-
-
-
 
     fun autoLadder(info: StreamInfo, maxTier: Int = MAX_TIER): List<VideoStream> {
         val hdr = QualityPreference.hdr && HdrSupport.isSupported
@@ -997,7 +922,6 @@ object StreamSelection {
     fun heights(info: StreamInfo): List<Int> {
         val allProgressive = info.videoOnlyStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 }
-        // HDR has its own rows; these are the SDR renditions at the same heights.
         val progressive = allProgressive.filterNot(HdrSupport::isHdrCodec).map { it.tier() }
             .ifEmpty { allProgressive.map { it.tier() } }
         if (progressive.isNotEmpty()) {
@@ -1015,10 +939,6 @@ object StreamSelection {
         return emptyList()
     }
 }
-
-
-
-
 
 private val YT_VIDEO_ID_IN_THUMB = Regex("""i\.ytimg\.com/vi/([\w-]{11})/""")
 
@@ -1040,9 +960,7 @@ fun ytimgThumbnailWidth(url: String): Int {
     }
 }
 
-
 fun feedThumbnailUrl(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hq720.jpg"
-
 
 fun sharpenFeedThumbnail(apiUrl: String?, videoId: String): String {
     val api = apiUrl?.trim()?.ifBlank { null }
@@ -1055,17 +973,14 @@ fun sharpenFeedThumbnail(apiUrl: String?, videoId: String): String {
     return feedThumbnailUrl(videoId)
 }
 
-
 fun channelAvatarEdgePx(url: String): Int =
     Regex("=s(\\d+)").find(url)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
-
 
 fun normalizeChannelAvatarUrl(url: String): String {
     if ("/ytc/" !in url || "googleusercontent.com" in url) return url
     val id = url.substringAfter("/ytc/").substringBefore("=").substringBefore("?").ifBlank { return url }
     return "https://yt3.googleusercontent.com/ytc/$id=s88-c-k-c0x00ffffff-no-rj"
 }
-
 
 fun sharpenChannelAvatarUrl(url: String, minEdgePx: Int): String {
     val normalized = normalizeChannelAvatarUrl(url)
@@ -1091,12 +1006,6 @@ internal fun upscaleGgphtThumbnail(url: String, targetWidth: Int): String {
         "$url=w$targetWidth-h$height"
     }
 }
-
-
-
-
-
-
 
 fun fetchDislikeCount(videoId: String): Long {
     return runCatching {
