@@ -29,12 +29,12 @@ fun highResMusicThumbnail(url: String?): String? {
     var u = url
     if (u.contains("googleusercontent.com")) {
         u = u.replace(Regex("=w\\d+-h\\d+[^&?]*"), "=w800-h800-l90-rj")
-             .replace(Regex("=s\\d+[^&?]*"), "=s800-c")
+            .replace(Regex("=s\\d+[^&?]*"), "=s800-c")
     } else if (u.contains("ytimg.com/vi/")) {
         u = u.replace("/default.jpg", "/maxresdefault.jpg")
-             .replace("/mqdefault.jpg", "/maxresdefault.jpg")
-             .replace("/hqdefault.jpg", "/maxresdefault.jpg")
-             .replace("/sddefault.jpg", "/maxresdefault.jpg")
+            .replace("/mqdefault.jpg", "/maxresdefault.jpg")
+            .replace("/hqdefault.jpg", "/maxresdefault.jpg")
+            .replace("/sddefault.jpg", "/maxresdefault.jpg")
     }
     return u
 }
@@ -75,14 +75,11 @@ data class ChannelRef(val id: String, val name: String, val avatar: String?) {
     val url: String get() = "https://www.youtube.com/channel/$id"
 }
 
-
 @Immutable
 data class FeedPage(val videos: List<VideoItem>, val next: String?, val channelHeader: ChannelHeaderMeta? = null)
 
-
 @Immutable
 data class LyricLine(val timeMs: Long, val text: String)
-
 
 @Immutable
 data class LyricsDoc(val lines: List<LyricLine>) {
@@ -99,14 +96,6 @@ enum class LikeStatus { Like, Dislike, None }
 data class VideoAccountState(val like: LikeStatus, val subscribed: Boolean?, val channelId: String?)
 
 class NotSignedInException : IOException("Not signed in")
-
-
-
-
-
-
-
-
 
 @Immutable
 data class AccountSummary(
@@ -172,7 +161,6 @@ object Account {
             persistAccounts()
         }
 
-        // Migrate the single-session format used before multi-account support.
         if (entries.isEmpty()) {
             val legacy = s.get(KEY_COOKIES)
             val name = s.get(KEY_NAME)
@@ -292,7 +280,7 @@ object Account {
         }
     }
 
-            private val BLACKLISTED_ACCOUNT_NAMES = setOf(
+    private val BLACKLISTED_ACCOUNT_NAMES = setOf(
         "your data in youtube",
         "your channel",
         "youtube studio",
@@ -327,7 +315,7 @@ object Account {
         return true
     }
 
-        private fun fetchProfileFromNetwork(): Profile? {
+    private fun fetchProfileFromNetwork(): Profile? {
         val emailRegex = Regex("""[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""")
         var found: Profile? = null
 
@@ -509,7 +497,7 @@ object Account {
         visitorData = entry.visitor
     }
 
-        private fun publish() {
+    private fun publish() {
         accounts = entries.map {
             val cleanName = if (isCleanAccountName(it.name)) it.name else (it.email ?: it.handle ?: "Google Account")
             AccountSummary(it.id, cleanName, it.handle ?: it.email, it.avatar, it.email)
@@ -607,7 +595,6 @@ object Account {
 
     internal fun cookieHeader(): String = synchronized(cookies) { cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } }
 
-
     internal fun authorization(origin: String = ORIGIN): String? {
         val ts = System.currentTimeMillis() / 1000
         fun hash(secret: String): String {
@@ -624,7 +611,6 @@ object Account {
             p3?.let { append(" SAPISID3PHASH ").append(hash(it)) }
         }
     }
-
 
     internal fun absorbSetCookies(setCookies: List<String>) {
         if (setCookies.isEmpty()) return
@@ -662,23 +648,12 @@ object Account {
     private const val KEY_ACTIVE = "active_account"
 }
 
-
-
-
-
-
 object InnerTube {
     private const val BASE = "https://www.youtube.com/youtubei/v1/"
     private val JSON_TYPE = "application/json".toMediaType()
 
-
     internal fun postAny(endpoint: String, body: JSONObject): JSONObject =
         if (Account.signedIn) post(endpoint, body) else post(endpoint, body, anonymous = true)
-
-    
-
-
-
 
     internal fun playerResponse(videoId: String): JSONObject = postAny(
         "player",
@@ -782,12 +757,10 @@ object InnerTube {
         }
     }
 
-
     suspend fun musicHome(): List<MusicShelf> = withContext(Dispatchers.IO) {
         val root = postMusic("browse", JSONObject().put("browseId", "FEmusic_home"))
         parseMusicShelves(root)
     }
-
 
     suspend fun musicHistory(): List<VideoItem> = withContext(Dispatchers.IO) {
         if (!Account.signedIn) return@withContext emptyList()
@@ -795,7 +768,6 @@ object InnerTube {
             ?: return@withContext emptyList()
         collectMusicSongs(root).distinctBy { it.id }
     }
-
 
     suspend fun musicLiked(): List<VideoItem> = withContext(Dispatchers.IO) {
         if (!Account.signedIn) return@withContext emptyList()
@@ -807,11 +779,6 @@ object InnerTube {
         list.map { it.copy(thumbnail = highResMusicThumbnail(it.thumbnail)) }
     }
 
-    
-
-
-
-
     suspend fun musicLyrics(
         videoId: String,
         title: String,
@@ -822,7 +789,6 @@ object InnerTube {
             .replace(Regex("(?i)ft\\..*|feat\\..*"), "")
             .trim()
         val cleanArtist = artist.split(",", "·", "&", "feat.", "ft.", " - ").firstOrNull()?.trim() ?: artist.trim()
-
 
         var plainFallback: LyricsDoc? = null
         runCatching {
@@ -846,7 +812,6 @@ object InnerTube {
                 }
             }
         }
-
 
         runCatching {
             val nextBody = JSONObject().put("videoId", videoId)
@@ -891,8 +856,6 @@ object InnerTube {
             }
         }
 
-        // One more chance at a synced match. This runs even when YouTube Music gave us plain
-        // lyrics: a synced lrclib result is what drives the karaoke highlight.
         var foundSynced: LyricsDoc? = null
         runCatching {
             val searchUrl = "https://lrclib.net/api/search?q=" +
@@ -941,10 +904,6 @@ object InnerTube {
         return@withContext null
     }
 
-    
-
-
-
     private fun parseLyrics(raw: String): LyricsDoc {
         val timeTag = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\]")
         val timed = mutableListOf<LyricLine>()
@@ -967,7 +926,6 @@ object InnerTube {
                     timed += LyricLine(min * 60_000 + sec * 1000 + frac, text)
                 }
             } else {
-
                 if (text.isBlank() || row.trim().matches(Regex("^\\[[a-zA-Z#]+:.*]$"))) return@forEach
                 plain += text
             }
@@ -979,15 +937,7 @@ object InnerTube {
         }
     }
 
-    
-
-
-
-
-
-
-
-        private val SHORTS_TOPICS = listOf(
+    private val SHORTS_TOPICS = listOf(
         "#shorts",
         "Trending shorts",
         "Viral shorts",
@@ -1171,7 +1121,6 @@ object InnerTube {
         }
         FeedPage(result.values.toList(), continuationToken ?: "shelf:0:start")
     }
-
     internal fun parseShorts(root: JSONObject): FeedPage {
         val out = LinkedHashMap<String, VideoItem>()
         var next: String? = root.optJSONObject("continuationEndpoint")
@@ -1179,7 +1128,8 @@ object InnerTube {
             ?: root.optJSONObject("continuationEndpoint")
                 ?.optJSONObject("reelWatchSequenceEndpoint")?.optString("sequenceParams")?.ifBlank { null }
             ?: root.optString("continuation").takeIf { it.isNotBlank() }
-        root.walk { key, obj ->
+        val scopeRoot = selectActiveTabScope(root)
+        scopeRoot.walk { key, obj ->
             when (key) {
                 "reelItemRenderer" -> {
                     val id = obj.optString("videoId").ifBlank { return@walk }
@@ -1224,7 +1174,6 @@ object InnerTube {
                         )
                     }
                 }
-
                 "lockupViewModel" -> {
                     val command = obj.optJSONObject("rendererContext")?.optJSONObject("commandContext")
                         ?.optJSONObject("onTap")?.optJSONObject("innertubeCommand")
@@ -1326,9 +1275,7 @@ object InnerTube {
                     }
                 }
             }
-            if (key == "continuationItemRenderer" || key == "continuationItemViewModel") {
-                obj.collectStrings("token").firstOrNull()?.let { next = it }
-            }
+            extractContinuationToken(key, obj)?.let { next = it }
         }
         return FeedPage(out.values.toList(), next)
     }
@@ -1457,10 +1404,6 @@ object InnerTube {
         }
         null
     }
-
-    
-
-
 
     suspend fun musicItemSongs(item: MusicShelfItem): List<VideoItem> = withContext(Dispatchers.IO) {
         val out = LinkedHashMap<String, VideoItem>()
@@ -1596,20 +1539,12 @@ object InnerTube {
         return out
     }
 
-
-
     suspend fun browse(browseId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation) else JSONObject().put("browseId", browseId)
         parseFeed(post("browse", body))
     }
 
     suspend fun home(next: String? = null) = browse("FEwhat_to_watch", next)
-
-    
-
-
-
-
 
     private val POPULAR_TOPICS = listOf(
         "Trending",
@@ -1639,22 +1574,18 @@ object InnerTube {
     private val anonSeenVideoIds = LinkedHashSet<String>()
 
     suspend fun homeFeed(next: String? = null): FeedPage = withContext(Dispatchers.IO) {
-        // Signed in: this is the real personalised FEwhat_to_watch feed.
         if (Account.signedIn && (next == null || !next.startsWith("anon_feed:"))) {
             val body = if (next != null) JSONObject().put("continuation", next)
-                       else JSONObject().put("browseId", "FEwhat_to_watch")
+            else JSONObject().put("browseId", "FEwhat_to_watch")
             val personal = runCatching { parseFeed(post("browse", body)) }.getOrNull()
             if (personal != null && (personal.videos.isNotEmpty() || personal.next != null)) {
                 return@withContext personal
             }
         }
-
-        // Signed out (or the personalised request failed/ended): load unlimited infinite feed
         loadAnonymousInfiniteHomeFeed(next)
     }
 
     private suspend fun loadAnonymousInfiniteHomeFeed(next: String?): FeedPage = kotlinx.coroutines.coroutineScope {
-        // Initial page: deliver a dynamic, diverse, and unique mix each time
         if (next == null) {
             val randomTopics = POPULAR_TOPICS.shuffled().take(3)
             val trendingDeferred = async { runCatching { YouTube.trending(null) }.getOrNull() }
@@ -1695,7 +1626,6 @@ object InnerTube {
             return@coroutineScope FeedPage(result, "anon_feed:$nextIdx:start")
         }
 
-        // Continuing pagination token: "anon_feed:<topicIndexOrTrend>:<pageUrlOrMarker>"
         val parts = next.removePrefix("anon_feed:").split(":", limit = 2)
         val categoryOrIdx = parts.getOrNull(0) ?: "0"
         val cursor = parts.getOrNull(1)
@@ -1711,7 +1641,6 @@ object InnerTube {
         val topicIdx = categoryOrIdx.toIntOrNull() ?: 0
         val pageUrl = if (cursor == "start") null else cursor
 
-        // Try consecutive topics to guarantee fresh results even if a query returns empty
         for (attempt in 0..3) {
             val currentIdx = (topicIdx + attempt) % POPULAR_TOPICS.size
             val query = POPULAR_TOPICS[currentIdx]
@@ -1737,27 +1666,61 @@ object InnerTube {
             }
         }
 
-        // Infinite fallback: query a random topic so scrolling never terminates
         val randomTopic = POPULAR_TOPICS.random()
         val fallbackVideos = runCatching { YouTube.search(randomTopic) }.getOrDefault(emptyList())
         val nextIdx = (topicIdx + 1) % POPULAR_TOPICS.size
         return@coroutineScope FeedPage(fallbackVideos, "anon_feed:$nextIdx:start")
     }
 
-    suspend fun channelVideos(channelId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
-        val body = if (continuation != null) JSONObject().put("continuation", continuation)
-        else JSONObject().put("browseId", channelId).put("params", CHANNEL_VIDEOS_TAB)
+    private suspend fun fetchChannelUploadsPlaylist(channelId: String, cursor: String): FeedPage {
+        val uploadsId = "VLUU" + channelId.removePrefix("UC")
+        val body = if (cursor == "start" || cursor.isBlank()) {
+            JSONObject().put("browseId", uploadsId)
+        } else {
+            JSONObject().put("continuation", cursor)
+        }
         val root = postAny("browse", body)
-        val page = parseFeed(root)
+        val page = parseTabFeed(root)
+        val nextToken = page.next?.let { "uploads_pl:$it" }
+        return FeedPage(page.videos, nextToken)
+    }
+
+    suspend fun channelVideos(channelId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        if (continuation != null && continuation.startsWith("uploads_pl:")) {
+            val cursor = continuation.removePrefix("uploads_pl:")
+            return@withContext fetchChannelUploadsPlaylist(channelId, cursor)
+        }
+
+        val body = if (continuation != null) {
+            JSONObject().put("continuation", continuation)
+        } else {
+            JSONObject().put("browseId", channelId).put("params", CHANNEL_VIDEOS_TAB)
+        }
+        val root = postAny("browse", body)
+        val page = parseTabFeed(root)
         val header = if (continuation == null) parseChannelHeader(root) else null
-        FeedPage(page.videos, page.next, header)
+
+        val canUseUploadsFallback = channelId.startsWith("UC") && channelId.length > 2
+        if (page.videos.isEmpty() && page.next == null && canUseUploadsFallback) {
+            val fallback = runCatching { fetchChannelUploadsPlaylist(channelId, "start") }.getOrNull()
+            if (fallback != null && fallback.videos.isNotEmpty()) {
+                return@withContext FeedPage(fallback.videos, fallback.next, header)
+            }
+        }
+
+        val nextToken = when {
+            page.next != null -> page.next
+            canUseUploadsFallback -> "uploads_pl:start"
+            else -> null
+        }
+        FeedPage(page.videos, nextToken, header)
     }
 
     suspend fun channelLive(channelId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation)
         else JSONObject().put("browseId", channelId).put("params", CHANNEL_LIVE_TAB)
         val root = postAny("browse", body)
-        val page = parseFeed(root)
+        val page = parseTabFeed(root)
         FeedPage(page.videos, page.next)
     }
 
@@ -1774,7 +1737,6 @@ object InnerTube {
         parseShorts(postAny("browse", body))
     }
 
-
     private const val CHANNEL_VIDEOS_TAB = "EgZ2aWRlb3PyBgQKAjoA"
     private const val CHANNEL_SHORTS_TAB = "EgZzaG9ydHPyBgUKA5oBAA%3D%3D"
     private const val CHANNEL_LIVE_TAB = "EgZzdHJlYW1z8gYECgJ6AA%3D%3D"
@@ -1782,7 +1744,6 @@ object InnerTube {
     suspend fun subscriptionsFeed(next: String? = null) = browse("FEsubscriptions", next)
     suspend fun history(next: String? = null) = browse("FEhistory", next)
     suspend fun playlist(id: String, next: String? = null) = browse("VL$id", next)
-
 
     suspend fun channelAvatarUrl(channelId: String): String? = withContext(Dispatchers.IO) {
         val root = postAny("browse", JSONObject().put("browseId", channelId))
@@ -1841,7 +1802,6 @@ object InnerTube {
         out.values.filterNot { it.id == "WL" || it.id == "LL" }
     }
 
-
     suspend fun videoState(videoId: String): VideoAccountState = withContext(Dispatchers.IO) {
         val next = post("next", JSONObject().put("videoId", videoId))
         var like = LikeStatus.None
@@ -1866,7 +1826,6 @@ object InnerTube {
         VideoAccountState(like, subscribed, channelId)
     }
 
-
     suspend fun channelSubscribed(channelId: String): Boolean? = withContext(Dispatchers.IO) {
         var subscribed: Boolean? = null
         post("browse", JSONObject().put("browseId", channelId)).walk { key, obj ->
@@ -1876,8 +1835,6 @@ object InnerTube {
         }
         subscribed
     }
-
-
 
     suspend fun setLike(videoId: String, status: LikeStatus) = withContext(Dispatchers.IO) {
         val endpoint = when (status) {
@@ -1904,13 +1861,7 @@ object InnerTube {
         Unit
     }
 
-
     class WatchSession(val videoId: String, val watchtimeUrl: String, val cpn: String)
-
-    
-
-
-
 
     fun startWatch(videoId: String): WatchSession? {
         val tracking = post("player", JSONObject().put("videoId", videoId)).optJSONObject("playbackTracking") ?: return null
@@ -1921,12 +1872,6 @@ object InnerTube {
         val watchtime = tracking.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")?.ifBlank { null } ?: return null
         return WatchSession(videoId, watchtime, cpn)
     }
-
-    
-
-
-
-
 
     fun pingWatchtime(session: WatchSession, positionSec: Double, starts: List<Double>, ends: List<Double>, playing: Boolean, elapsedSec: Double, final: Boolean) {
         fun f(x: Double) = String.format(java.util.Locale.US, "%.3f", x)
@@ -1959,44 +1904,84 @@ object InnerTube {
 
     private const val CPN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 
+    private fun selectActiveTabScope(root: JSONObject): JSONObject {
+        val tabs = root.optJSONObject("contents")
+            ?.optJSONObject("twoColumnBrowseResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?: root.optJSONObject("contents")
+                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+        if (tabs != null) {
+            for (i in 0 until tabs.length()) {
+                val tab = tabs.optJSONObject(i)?.optJSONObject("tabRenderer") ?: continue
+                if (tab.optBoolean("selected", false)) {
+                    return tab.optJSONObject("content") ?: tab
+                }
+            }
+            for (i in 0 until tabs.length()) {
+                val tab = tabs.optJSONObject(i)?.optJSONObject("tabRenderer") ?: continue
+                val content = tab.optJSONObject("content") ?: continue
+                if (content.has("richGridRenderer") || content.has("sectionListRenderer")) {
+                    return content
+                }
+            }
+        }
+        return root
+    }
 
+    private fun extractContinuationToken(key: String, obj: JSONObject): String? {
+        return when (key) {
+            "continuationItemRenderer", "continuationItemViewModel" -> {
+                obj.optJSONObject("continuationEndpoint")
+                    ?.optJSONObject("continuationCommand")
+                    ?.optString("token")
+                    ?.ifBlank { null }
+                    ?: obj.collectStrings("token").firstOrNull()
+                    ?: obj.collectStrings("continuation").firstOrNull()
+            }
+            "nextContinuationData", "reloadContinuationData" -> {
+                obj.optString("continuation").ifBlank { null }
+            }
+            else -> null
+        }
+    }
 
-    
-
-
+    internal fun parseTabFeed(root: JSONObject): FeedPage {
+        val videos = LinkedHashMap<String, VideoItem>()
+        var next: String? = null
+        val scopeRoot = selectActiveTabScope(root)
+        scopeRoot.walk { key, obj ->
+            when (key) {
+                "videoRenderer", "gridVideoRenderer", "compactVideoRenderer", "playlistVideoRenderer" ->
+                    if (!isMembersOnly(obj) && !isMovie(obj)) parseVideoRenderer(obj)?.let { videos.putIfAbsent(it.id, it) }
+                "lockupViewModel" -> if (obj.optString("contentType") == "LOCKUP_CONTENT_TYPE_VIDEO" && !isMembersOnly(obj) && !isMovie(obj)) {
+                    parseLockup(obj)?.let { videos.putIfAbsent(it.id, it) }
+                }
+            }
+            extractContinuationToken(key, obj)?.let { next = it }
+        }
+        return FeedPage(videos.values.toList(), next)
+    }
 
     internal fun parseFeed(root: JSONObject): FeedPage {
         val videos = LinkedHashMap<String, VideoItem>()
         var next: String? = null
         root.walk { key, obj ->
             when (key) {
-
-
                 "videoRenderer", "gridVideoRenderer", "compactVideoRenderer", "playlistVideoRenderer" ->
                     if (!isMembersOnly(obj) && !isMovie(obj)) parseVideoRenderer(obj)?.let { videos.putIfAbsent(it.id, it) }
                 "lockupViewModel" -> if (obj.optString("contentType") == "LOCKUP_CONTENT_TYPE_VIDEO" && !isMembersOnly(obj) && !isMovie(obj)) {
                     parseLockup(obj)?.let { videos.putIfAbsent(it.id, it) }
                 }
-
-
-                "continuationItemRenderer", "continuationItemViewModel" ->
-                    obj.collectStrings("token").firstOrNull()?.let { next = it }
             }
+            extractContinuationToken(key, obj)?.let { next = it }
         }
         return FeedPage(videos.values.toList(), next)
     }
 
-
     internal fun isMembersOnly(o: JSONObject): Boolean =
         o.collectStrings("badgeStyle").any { it.contains("MEMBERS_ONLY") } ||
             o.collectStrings("style").any { it == "BADGE_STYLE_TYPE_MEMBERS_ONLY" }
-
-    
-
-
-
-
-
 
     internal fun isMovie(o: JSONObject): Boolean {
         if (o.collectStrings("style").any { it == "BADGE_STYLE_TYPE_YPC" || it == "BADGE_STYLE_TYPE_MEDIA" }) return true
@@ -2080,7 +2065,8 @@ object InnerTube {
     internal fun parseCommunity(root: JSONObject): CommunityPage {
         val posts = mutableListOf<CommunityPost>()
         var next: String? = null
-        root.walk { key, obj ->
+        val scopeRoot = selectActiveTabScope(root)
+        scopeRoot.walk { key, obj ->
             when (key) {
                 "backstagePostRenderer", "sharedPostRenderer", "postRenderer" -> {
                     val id = obj.optString("postId").ifBlank { obj.optString("id") }
@@ -2096,9 +2082,8 @@ object InnerTube {
                         posts.add(CommunityPost(id, author.orEmpty(), avatar, text, image, published, likes))
                     }
                 }
-                "continuationItemRenderer", "continuationItemViewModel" ->
-                    obj.collectStrings("token").firstOrNull()?.let { next = it }
             }
+            extractContinuationToken(key, obj)?.let { next = it }
         }
         return CommunityPage(posts, next)
     }
@@ -2166,7 +2151,6 @@ object InnerTube {
         if (!DURATION.matches(t)) return 0
         return t.split(':').fold(0L) { acc, part -> acc * 60 + (part.toLongOrNull() ?: 0) }
     }
-
 
     internal fun parseViews(text: String?): Long {
         val t = text?.lowercase()?.replace(",", "")?.trim() ?: return -1
@@ -2238,7 +2222,6 @@ object InnerTube {
         return ChannelHeaderMeta(handle, subscribers.coerceAtLeast(0), videoCount.coerceAtLeast(-1), verified)
     }
 
-
     internal fun parseChannelVerified(headerRoot: JSONObject): Boolean {
         headerRoot.optJSONObject("pageHeaderRenderer")?.optJSONObject("content")
             ?.optJSONObject("pageHeaderViewModel")?.optJSONObject("title")
@@ -2261,9 +2244,6 @@ object InnerTube {
     private val VIDEO_COUNT_IN_LINE = Regex("""[\d,.]+[kmb]?\s+videos\b""", RegexOption.IGNORE_CASE)
 }
 
-
-
-
 internal fun JSONObject.walk(visit: (key: String, obj: JSONObject) -> Unit) {
     val keys = keys()
     while (keys.hasNext()) {
@@ -2283,7 +2263,6 @@ private fun JSONArray.walkArray(visit: (key: String, obj: JSONObject) -> Unit) {
         }
     }
 }
-
 
 internal fun JSONObject.forEachObject(visit: (JSONObject) -> Unit) {
     visit(this)
@@ -2305,7 +2284,6 @@ private fun JSONArray.forEachObjectInArray(visit: (JSONObject) -> Unit) {
     }
 }
 
-
 internal fun JSONObject.text(key: String): String? {
     val o = optJSONObject(key) ?: return optString(key).ifBlank { null }
     o.optString("simpleText").ifBlank { null }?.let { return it }
@@ -2313,7 +2291,6 @@ internal fun JSONObject.text(key: String): String? {
     val runs = o.optJSONArray("runs") ?: return null
     return (0 until runs.length()).joinToString("") { runs.optJSONObject(it)?.optString("text").orEmpty() }.ifBlank { null }
 }
-
 
 internal fun JSONObject.thumbnails(): List<String>? {
     val arr = optJSONObject("thumbnail")?.optJSONArray("thumbnails") ?: optJSONArray("thumbnails") ?: return null
@@ -2335,7 +2312,6 @@ internal fun JSONArray.widestSourceUrl(): String? {
     return best ?: optJSONObject(length() - 1)?.optString("url")?.ifBlank { null }
 }
 
-
 internal fun JSONObject.bestThumbnailUrl(): String? {
     val arr = optJSONObject("thumbnail")?.optJSONArray("thumbnails") ?: optJSONArray("thumbnails") ?: return null
     var best: String? = null
@@ -2353,7 +2329,6 @@ internal fun JSONObject.bestThumbnailUrl(): String? {
 }
 
 private fun JSONObject.firstImageSource(): String? = collectStrings("url").firstOrNull { it.contains("ytimg") || it.contains("ggpht") }
-
 
 internal fun JSONObject.collectStrings(field: String): List<String> {
     val out = mutableListOf<String>()
