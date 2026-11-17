@@ -17,16 +17,16 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import kotlin.math.min
 import kotlin.math.roundToInt
-import androidx.media3.session.SessionToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -166,7 +166,6 @@ class PlayerState(private val scope: CoroutineScope) {
 
     var fullscreen by mutableStateOf(false)
 
-    /** Portrait videos go edge-to-edge without rotating the device, exactly like YouTube. */
     var portraitFullscreen by mutableStateOf(false)
 
     val portraitVideo get() = videoAspect < 1.02f
@@ -177,7 +176,6 @@ class PlayerState(private val scope: CoroutineScope) {
 
     val comments = CommentsState(scope)
 
-    /** Polled only while a live stream's chat sheet is open. */
     val liveChat = LiveChatState(scope)
 
     var accountState by mutableStateOf<VideoAccountState?>(null)
@@ -186,11 +184,9 @@ class PlayerState(private val scope: CoroutineScope) {
     var inWatchLater by mutableStateOf(false)
         private set
 
-    /** Audio tracks offered by the current video, Original first. */
     var audioOptions by mutableStateOf<List<AudioTrackOption>>(emptyList())
         private set
 
-    /** The cue text Media3's text renderer is currently showing, or null when captions are off. */
     var captionText by mutableStateOf<String?>(null)
         private set
 
@@ -578,10 +574,6 @@ class PlayerState(private val scope: CoroutineScope) {
 
     private fun dislikeWeight(status: LikeStatus): Long = if (status == LikeStatus.Dislike) 1L else 0L
 
-    /**
-     * Tapping a thumb is optimistic for everyone, signed in or not. The visible count moves
-     * immediately; the network call only decides whether the choice survives a restart.
-     */
     fun setLike(target: LikeStatus) {
         val id = current?.id ?: return
         val before = currentLike
@@ -655,10 +647,6 @@ class PlayerState(private val scope: CoroutineScope) {
         val player = controller ?: return
         val item = details?.item ?: current ?: return
 
-        // The service rebuilds the source from the exact rendition StreamSelection
-        // picked. Forcing a min/max height here would filter that rendition out when
-        // an HDR row falls back to a lower SDR height, leaving the player with no
-        // video track at all.
         if (item.isLive) {
             details = details?.copy(quality = height?.let { "${it}p" } ?: "Live")
             return
@@ -675,7 +663,6 @@ class PlayerState(private val scope: CoroutineScope) {
         )
     }
 
-    /** Refresh the audio-track list from the resolved stream info. */
     fun refreshTracks() {
         val id = current?.id ?: return
         val cached = StreamCache.get(id)
@@ -696,17 +683,12 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
-    /** A saved language that this video does not offer falls back to Original, not silence. */
     private fun syncAudioPreference(info: org.schabi.newpipe.extractor.stream.StreamInfo) {
         val wanted = AudioTrackPreference.key ?: return
         val offered = StreamSelection.audioTracks(info)
         if (offered.none { it.key == wanted || wanted.startsWith(it.key) }) AudioTrackPreference.reset()
     }
 
-    /**
-     * Swap the audio rendition without losing the place. The service re-reads the persisted
-     * preference when it builds the next media source.
-     */
     fun setAudioTrack(option: AudioTrackOption?) {
         AudioTrackPreference.set(if (option == null || option.isOriginal) null else option.key, option?.label ?: "Original")
         val player = controller ?: return
@@ -877,9 +859,6 @@ class PlayerState(private val scope: CoroutineScope) {
 
     private fun applyVideoTrack() {
         runCatching {
-            // Music keeps its video track alive in the background. Toggling it off and on
-            // made the decoder re-init, which is the audible dip heard when reopening the
-            // app during background playback.
             if (isMusicMode) return
             val off = AudioOnly.enabled || wantBackground
             val player = controller ?: return
