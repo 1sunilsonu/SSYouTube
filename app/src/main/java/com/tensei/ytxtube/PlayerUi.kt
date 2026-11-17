@@ -1,41 +1,10 @@
 package com.tensei.ytxtube
 
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
-
-import androidx.compose.animation.animateColorAsState
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.ui.draw.blur
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.graphics.drawable.toBitmap
-import coil.imageLoader
-import coil.request.ImageRequest
-import coil.request.SuccessResult
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
@@ -43,11 +12,21 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.runtime.SideEffect
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -61,7 +40,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -70,20 +48,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.outlined.WatchLater
-import android.content.Intent
-import android.widget.Toast
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
@@ -91,7 +67,6 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Share
@@ -99,8 +74,8 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.ThumbDown
-import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -112,6 +87,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -119,9 +95,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -131,25 +107,34 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalDensity
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.launch
-import kotlin.math.exp
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.media3.ui.compose.PlayerSurface
-import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
-
-
-
+import androidx.core.graphics.drawable.toBitmap
+import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import kotlin.math.exp
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal val StageTopGap = 0.dp
 internal val StageSideGap = 0.dp
@@ -161,9 +146,6 @@ internal val MiniThumbWidth = 88.dp
 internal val MiniThumbHeight = 50.dp
 internal val MiniThumbRadius = 12.dp
 
-
-
-
 internal const val StageMinAspect = 0.8f
 internal const val StageMaxAspect = 2.4f
 
@@ -172,8 +154,6 @@ internal const val StageFrameAspect = 16f / 9f
 internal const val AudioStageAspect = 2.5f
 
 private const val DetailsFadeStart = 0.55f
-
-
 
 @Composable
 fun PlayerScreen(
@@ -199,7 +179,6 @@ fun PlayerScreen(
     DisposableEffect(Unit) {
         onDispose { state.liveChat.stop() }
     }
-
 
     val interactive = state.expanded || morph.dragging
     val showDetails by remember { derivedStateOf { state.expanded || morph.dragging || morph.progress.value > DetailsFadeStart } }
@@ -252,13 +231,9 @@ fun PlayerScreen(
     Box(
         Modifier
             .fillMaxSize()
-
             .graphicsLayer {
                 val g = morph.geometry ?: return@graphicsLayer
                 val p = morph.progress.value
-
-
-
                 val full = Rect(Offset.Zero, size)
                 val frame = Rect(
                     lerpF(g.miniCard.left, full.left, p), lerpF(g.miniCard.top, full.top, p),
@@ -269,18 +244,14 @@ fun PlayerScreen(
             }
             .drawBehind {
                 val p = morph.progress.value
-
                 drawRect(lerpColor(miniColor, pageColor, ramp(p, 0f, 0.6f)))
             }
             .drawBehind {
-                // AMOLED is meant to be pure black. The drifting status-bar/player glow
-                // is a normal-theme effect only; low-end devices skip it to keep playback smooth.
                 if (isAmoled || !GlassQuality.effectsSupported || state.isMusicMode || size.width < 10f || size.height < 10f) return@drawBehind
                 val topStrength = if (isAmoled) 0.40f else if (isDark) 0.35f else 0.22f
                 val bodyStrength = if (isAmoled) 0.30f else if (isDark) 0.26f else 0.16f
                 val aspect = state.stageAspect.coerceAtLeast(0.5f)
                 val topRadius = (size.width * 0.95f).coerceAtLeast(10f)
-                // Live moving blur effect above video in status bar
                 drawRect(
                     Brush.radialGradient(
                         colors = listOf(ambientColor.copy(alpha = topStrength), Color.Transparent),
@@ -288,7 +259,6 @@ fun PlayerScreen(
                         radius = topRadius,
                     ),
                 )
-                // Color shade stretching down behind title, channel and fading away slowly after the like/action buttons row
                 val startY = top.toPx() + (size.width / aspect * 0.4f).coerceAtLeast(0f)
                 val glowReach = minOf(size.height * 0.58f, size.width * 1.35f).coerceAtLeast(startY + 50f)
                 drawRect(
@@ -312,8 +282,6 @@ fun PlayerScreen(
                     ),
                 )
             }
-
-
             .then(if (interactive) Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } } else Modifier),
     ) {
         ActionMessage(state, Modifier.align(Alignment.BottomCenter).zIndex(1f).padding(bottom = bottom + 24.dp))
@@ -336,43 +304,86 @@ fun PlayerScreen(
                 )
             }
         } else {
-        val screenConfig = androidx.compose.ui.platform.LocalConfiguration.current
-        val isWide = TvMode.isTv || screenConfig.screenWidthDp >= 640
-        if (isWide) {
-            Row(Modifier.fillMaxSize()) {
-                Column(
-                    Modifier
-                        .weight(0.60f)
-                        .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
-                ) {
+            val screenConfig = androidx.compose.ui.platform.LocalConfiguration.current
+            val isWide = TvMode.isTv || screenConfig.screenWidthDp >= 640
+            if (isWide) {
+                Row(Modifier.fillMaxSize()) {
+                    Column(
+                        Modifier
+                            .weight(0.60f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Spacer(Modifier.height(top))
+                        Box(Modifier.zIndex(2f)) {
+                            VideoStage(state, morph, onCollapse, onFullscreen, interactive)
+                        }
+                        if (showDetails) {
+                            VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream)
+                        }
+                        Spacer(Modifier.height(bottom + 32.dp))
+                    }
+                    Column(
+                        Modifier
+                            .weight(0.40f)
+                            .fillMaxHeight()
+                    ) {
+                        Spacer(Modifier.height(top))
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = bottom + 32.dp),
+                        ) {
+                            item(key = "wideMoreTitle") { SectionTitle("More videos") }
+                            val related = details?.related.orEmpty()
+                            if (related.isNotEmpty()) {
+                                items(related, key = { "wide-rel-" + it.id }) { video ->
+                                    Box(Modifier.padding(horizontal = 14.dp, vertical = 2.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                                }
+                            } else if (state.loading) {
+                                item(key = "wideLoading") {
+                                    Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
+                                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
                     Spacer(Modifier.height(top))
+
                     Box(Modifier.zIndex(2f)) {
                         VideoStage(state, morph, onCollapse, onFullscreen, interactive)
                     }
-                    if (showDetails) {
-                        VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream)
-                    }
-                    Spacer(Modifier.height(bottom + 32.dp))
-                }
-                Column(
-                    Modifier
-                        .weight(0.40f)
-                        .fillMaxHeight()
-                ) {
-                    Spacer(Modifier.height(top))
+
+                    if (!showDetails) Spacer(Modifier.weight(1f)) else
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .zIndex(0f)
+                            .nestedScroll(morph.nestedScroll)
+                            .graphicsLayer {
+                                val p = morph.progress.value
+                                alpha = ramp(p, DetailsFadeStart)
+                                val g = morph.geometry
+                                translationY = if (g != null && p < 0.98f) {
+                                    lerpF(g.miniThumb.bottom - g.stage.bottom, 0f, p)
+                                } else {
+                                    0f
+                                }
+                            },
                         contentPadding = PaddingValues(bottom = bottom + 32.dp),
                     ) {
-                        item(key = "wideMoreTitle") { SectionTitle("More videos") }
+                        item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream) }
                         val related = details?.related.orEmpty()
                         if (related.isNotEmpty()) {
-                            items(related, key = { "wide-rel-" + it.id }) { video ->
-                                Box(Modifier.padding(horizontal = 14.dp, vertical = 2.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                            item(key = "moreTitle") { SectionTitle("More videos") }
+                            items(related, key = { "rel-" + it.id }) { video ->
+                                Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
                             }
                         } else if (state.loading) {
-                            item(key = "wideLoading") {
+                            item(key = "loading") {
                                 Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
                                     CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
                                 }
@@ -381,61 +392,9 @@ fun PlayerScreen(
                     }
                 }
             }
-        } else {
-        Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.height(top))
-
-
-            Box(Modifier.zIndex(2f)) {
-                VideoStage(state, morph, onCollapse, onFullscreen, interactive)
-            }
-
-
-            if (!showDetails) Spacer(Modifier.weight(1f)) else
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .zIndex(0f)
-                    .nestedScroll(morph.nestedScroll)
-                    .graphicsLayer {
-
-
-                        val p = morph.progress.value
-                        alpha = ramp(p, DetailsFadeStart)
-                        val g = morph.geometry
-                        translationY = if (g != null && p < 0.98f) {
-                            lerpF(g.miniThumb.bottom - g.stage.bottom, 0f, p)
-                        } else {
-                            0f
-                        }
-                    },
-                contentPadding = PaddingValues(bottom = bottom + 32.dp),
-            ) {
-                item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream) }
-                val related = details?.related.orEmpty()
-                if (related.isNotEmpty()) {
-                    item(key = "moreTitle") { SectionTitle("More videos") }
-                    items(related, key = { "rel-" + it.id }) { video ->
-                        Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
-                    }
-                } else if (state.loading) {
-                    item(key = "loading") {
-                        Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
-                            CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-                        }
-                    }
-                }
-            }
+            if (interactive) BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
+            MorphingMiniDetails(state, morph)
         }
-
-
-        }
-        if (interactive) BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
-
-
-        MorphingMiniDetails(state, morph)
-        }
-
 
         if (state.sheet == PlayerSheet.Comments) {
             val detailItem = state.details?.item
@@ -460,12 +419,6 @@ fun PlayerScreen(
     }
 }
 
-
-
-
-
-
-
 @Composable
 private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () -> Unit, onFullscreen: () -> Unit, interactive: Boolean) {
     val reduced = rememberReducedMotion()
@@ -479,7 +432,6 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
     val pullUp = remember { Animatable(0f) }
     val pullDistance = with(LocalDensity.current) { FullscreenPull.toPx() }
 
-
     var decided by remember { mutableStateOf(false) }
     var pulling by remember { mutableStateOf(false) }
     val stage = Modifier
@@ -487,15 +439,11 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
         .fillMaxWidth()
         .aspectRatio(aspect)
         .graphicsLayer {
-
             val k = 1f + 0.06f * (1f - exp(-pullUp.value / (pullDistance * 1.5f)))
             scaleX = k
             scaleY = k
             transformOrigin = TransformOrigin(0.5f, 0f)
         }
-
-
-
         .graphicsLayer {
             val g = morph.geometry
             val p = morph.progress.value
@@ -506,15 +454,11 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
                 transformOrigin = TransformOrigin(0f, 0f)
                 translationX = f.offset.x
                 translationY = f.offset.y
-
-
                 shape = RoundRectClip(f.window, lerpF(g.thumbRadius / f.startScale, g.stageRadius, p.coerceIn(0f, 1f)))
             } else {
                 shape = RoundedCornerShape(StageRadius)
             }
-
             clip = false
-
             shadowElevation = 14.dp.toPx() * (1f - p).coerceIn(0f, 1f)
             ambientShadowColor = Color.Black.copy(alpha = 0.25f)
             spotShadowColor = Color.Black.copy(alpha = 0.35f)
@@ -557,7 +501,6 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             state = state,
             fullscreen = false,
             interactive = interactive,
-
             onInactiveTap = { state.expanded = true },
             onCollapse = onCollapse,
             onToggleFullscreen = onFullscreen,
@@ -568,17 +511,12 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
     }
 }
 
-
 private val FullscreenPull = 96.dp
-
-
 
 @Composable
 private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val reduced = rememberReducedMotion()
-
-
     val radius by animateDpAsState(if (subscribed) 14.dp else 18.dp, if (reduced) tween(0) else spring(dampingRatio = 0.6f, stiffness = 500f), label = "subShape")
     Row(
         modifier = Modifier
@@ -603,10 +541,6 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
     }
 }
 
-
-
-
-
 @Composable
 private fun PlayerActions(state: PlayerState) {
     val context = LocalContext.current
@@ -617,7 +551,7 @@ private fun PlayerActions(state: PlayerState) {
             .bleed(20.dp)
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AccountActions(state)
@@ -633,8 +567,6 @@ private fun PlayerActions(state: PlayerState) {
                 if (item.localUri != null) {
                     state.actionMessage = "Playing from your downloads"
                 } else if (state.isMusicMode) {
-
-
                     val queued = Downloads.enqueueMusic(item)
                     state.actionMessage = if (queued) {
                         "Downloading audio: ${item.title}"
@@ -664,7 +596,6 @@ private fun PlayerActions(state: PlayerState) {
     }
 }
 
-
 private fun Modifier.bleed(x: androidx.compose.ui.unit.Dp) = layout { measurable, constraints ->
     val extra = (x * 2).roundToPx()
     val placeable = measurable.measure(
@@ -672,7 +603,6 @@ private fun Modifier.bleed(x: androidx.compose.ui.unit.Dp) = layout { measurable
     )
     layout(placeable.width - extra, placeable.height) { placeable.place(-extra / 2, 0) }
 }
-
 
 @Composable
 private fun AccountActions(state: PlayerState) {
@@ -682,7 +612,7 @@ private fun AccountActions(state: PlayerState) {
     var lastLikes by remember { mutableStateOf(likes) }
     val rising = likes >= lastLikes
     SideEffect { lastLikes = likes }
-    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         ActionPill(
             icon = if (like == LikeStatus.Like) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
             label = likes.takeIf { it > 0 }?.let { formatCount(it) },
@@ -730,17 +660,48 @@ private fun ActionPill(
     onClick: () -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
-    val bg by androidx.compose.animation.animateColorAsState(if (active) c.primary else c.surfaceContainerHigh, tween(220), label = "pillBg")
-    val tint by androidx.compose.animation.animateColorAsState(if (active) c.onPrimary else c.onSurface, tween(220), label = "pillInk")
+    val backdrop = LocalGlassBackdrop.current
+    val dark = isDarkTheme()
+    val glassSupported = backdrop != null && GlassQuality.effectsSupported
+    val bg by animateColorAsState(
+        if (active) c.primary else c.surfaceContainerHigh,
+        tween(220),
+        label = "pillBg",
+    )
+    val tint by animateColorAsState(
+        if (active) c.onPrimary else c.onSurface,
+        tween(220),
+        label = "pillInk",
+    )
+    val glassTint = when {
+        active -> c.primary.copy(alpha = 0.82f)
+        dark -> Color(0xFF1D2028).copy(alpha = 0.48f)
+        else -> Color.White.copy(alpha = 0.56f)
+    }
+    val spec = glassSpec(
+        shape = shape,
+        tint = glassTint,
+        blur = 14.dp,
+        refractionHeight = 10.dp,
+        refractionAmount = 14.dp,
+    )
     Row(
         modifier = Modifier
             .squishOn(active)
             .height(36.dp)
             .pressable(onClick = onClick)
-
-            .background(bg, shape)
+            .then(
+                if (glassSupported && backdrop != null) {
+                    Modifier.liquidGlass(backdrop, spec)
+                } else {
+                    Modifier
+                        .clip(shape)
+                        .background(bg)
+                        .border(1.dp, c.onSurface.copy(alpha = 0.12f), shape)
+                }
+            )
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 500f))
-            .padding(horizontal = 11.dp),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FlourishIcon(icon, description, active = active, kind = flourish, tint = tint, size = 18.dp, sparkColor = c.primary)
@@ -750,7 +711,6 @@ private fun ActionPill(
         }
     }
 }
-
 
 @Composable
 private fun ActionMessage(state: PlayerState, modifier: Modifier) {
@@ -767,9 +727,6 @@ private fun ActionMessage(state: PlayerState, modifier: Modifier) {
             .padding(horizontal = 18.dp, vertical = 11.dp),
     ) { Text(message, color = c.inverseOnSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
 }
-
-
-
 @Composable
 fun LiquidMiniPlayer(
     state: PlayerState,
@@ -1006,14 +963,6 @@ fun MiniPlayer(
     }
 }
 
-
-
-
-
-
-
-
-
 @Composable
 private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
     val c = MaterialTheme.colorScheme
@@ -1083,7 +1032,6 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
             }
         }
 
-
         val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
         Box(
             Modifier
@@ -1106,20 +1054,11 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
     }
 }
 
-
-
-
-
-
-
 @Composable
 private fun MorphingMiniDetails(state: PlayerState, morph: PlayerMorph) {
     val g = morph.geometry ?: return
     Row(
         Modifier
-
-
-
             .layout { measurable, _ ->
                 val p = morph.progress.value
                 val gap = 12.dp.toPx()
@@ -1184,7 +1123,6 @@ fun BitChordMusicPlayer(
             .fillMaxSize()
             .background(c.surface),
     ) {
-
         AsyncImage(
             model = highResMusicThumbnail(item.thumbnail) ?: sharpenFeedThumbnail(null, item.id),
             contentDescription = null,
@@ -1218,7 +1156,6 @@ fun BitChordMusicPlayer(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1262,7 +1199,6 @@ fun BitChordMusicPlayer(
             }
 
             Spacer(Modifier.weight(if (showLyrics) 0.12f else 0.5f))
-
 
             if (showLyrics) {
                 MusicLyricsPanel(
@@ -1317,7 +1253,6 @@ fun BitChordMusicPlayer(
 
             Spacer(Modifier.weight(if (showLyrics) 0.12f else 0.5f))
 
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1356,7 +1291,6 @@ fun BitChordMusicPlayer(
 
             Spacer(Modifier.height(16.dp))
 
-
             val duration = state.durationMs.coerceAtLeast(1L)
             val currentPos = state.positionMs.coerceIn(0L, duration)
             var dragPos by remember { mutableStateOf<Float?>(null) }
@@ -1378,7 +1312,6 @@ fun BitChordMusicPlayer(
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
-
 
             Row(
                 modifier = Modifier
@@ -1402,13 +1335,11 @@ fun BitChordMusicPlayer(
 
             Spacer(Modifier.height(12.dp))
 
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-
                 IconButton(
                     onClick = state::toggleShuffle,
                     modifier = Modifier.size(48.dp),
@@ -1421,7 +1352,6 @@ fun BitChordMusicPlayer(
                     )
                 }
 
-
                 IconButton(
                     onClick = state::skipPrevious,
                     modifier = Modifier.size(48.dp),
@@ -1433,7 +1363,6 @@ fun BitChordMusicPlayer(
                         modifier = Modifier.size(36.dp),
                     )
                 }
-
 
                 Box(
                     modifier = Modifier
@@ -1459,7 +1388,6 @@ fun BitChordMusicPlayer(
                     }
                 }
 
-
                 IconButton(
                     onClick = state::skipNext,
                     modifier = Modifier.size(48.dp),
@@ -1471,7 +1399,6 @@ fun BitChordMusicPlayer(
                         modifier = Modifier.size(36.dp),
                     )
                 }
-
 
                 IconButton(
                     onClick = state::toggleLoop,
@@ -1489,7 +1416,6 @@ fun BitChordMusicPlayer(
             if (!showLyrics) {
                 Spacer(Modifier.height(16.dp))
 
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1497,7 +1423,6 @@ fun BitChordMusicPlayer(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
@@ -1512,7 +1437,6 @@ fun BitChordMusicPlayer(
                             color = c.onSurfaceVariant,
                         )
                     }
-
 
                     IconButton(
                         onClick = { showLyrics = !showLyrics },
@@ -1552,11 +1476,6 @@ fun BitChordMusicPlayer(
         )
     }
 }
-
-
-
-
-
 
 @Composable
 private fun MusicLyricsPanel(
@@ -1694,7 +1613,6 @@ private fun SyncedLyrics(
     onSeek: (Long) -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
-
     val lines = remember(lyrics, englishScript) {
         lyrics.lines.map { if (englishScript) it.copy(text = transliterate(it.text)) else it }
     }
@@ -1702,9 +1620,6 @@ private fun SyncedLyrics(
     val listState = rememberLazyListState()
     val dragged by listState.interactionSource.collectIsDraggedAsState()
 
-    // Apple Music keeps the line being sung pinned to the middle of the pane and glides there
-    // with a soft spring instead of jumping. A short lead makes the highlight land with the
-    // first syllable rather than a beat after it.
     LaunchedEffect(current, dragged) {
         if (current < 0 || dragged) return@LaunchedEffect
         val info = listState.layoutInfo
@@ -1782,10 +1697,8 @@ private fun SyncedLyrics(
                 }
             }
         }
-
     }
 }
-
 
 private fun transliterate(text: String): String {
     if (text.isBlank()) return text
@@ -1825,7 +1738,6 @@ private fun androidx.compose.foundation.layout.BoxScope.BitChordMiniDetails(
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-
         Box(
             Modifier
                 .size(46.dp)
