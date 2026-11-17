@@ -2,7 +2,6 @@ package com.tensei.ytxtube
 
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,7 +56,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -116,90 +114,25 @@ enum class HomeFilter(val raw: String) {
 }
 
 @Composable
-private fun LiquidGlassFilterChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val isDark = isDarkTheme()
-    val isAmoled = ThemeSettings.mode == "amoled"
-    val backdrop = LocalGlassBackdrop.current
-    val glassSupported = backdrop != null && GlassQuality.effectsSupported
-    val shape = RoundedCornerShape(10.dp)
-
-    val tint = when {
-        selected && (isDark || isAmoled) -> Color.White.copy(alpha = 0.86f)
-        selected -> Color(0xFF141418).copy(alpha = 0.84f)
-        isAmoled -> Color(0xFF16181E).copy(alpha = 0.56f)
-        isDark -> Color(0xFF22252E).copy(alpha = 0.48f)
-        else -> Color.White.copy(alpha = 0.58f)
-    }
-    val textColor = when {
-        selected && (isDark || isAmoled) -> Color.Black
-        selected -> Color.White
-        isDark || isAmoled -> Color.White
-        else -> Color(0xFF0F0F0F)
-    }
-    val borderColor = when {
-        selected -> Color.White.copy(alpha = 0.35f)
-        isDark || isAmoled -> Color.White.copy(alpha = 0.16f)
-        else -> Color.Black.copy(alpha = 0.08f)
-    }
-    val spec = glassSpec(
-        shape = shape,
-        tint = tint,
-        blur = 14.dp,
-        refractionHeight = 10.dp,
-        refractionAmount = 14.dp,
-    )
-
-    Box(
-        modifier = Modifier
-            .pressable(pressedScale = 0.94f, onClick = onClick)
-            .then(
-                if (glassSupported && backdrop != null) {
-                    Modifier.liquidGlass(backdrop, spec)
-                } else {
-                    Modifier
-                        .clip(shape)
-                        .background(tint)
-                        .border(1.dp, borderColor, shape)
-                }
-            )
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = textColor,
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp,
-            maxLines = 1,
-            softWrap = false,
-        )
-    }
-}
-
-@Composable
 fun HomeFilterChips(
     selected: HomeFilter,
     onSelect: (HomeFilter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyRow(
+    val entries = HomeFilter.entries
+    val selectedIndex = entries.indexOf(selected).coerceAtLeast(0)
+    LiquidGlassSliderTabs(
+        options = entries.map { it.label },
+        selectedIndex = selectedIndex,
+        onSelect = { idx -> entries.getOrNull(idx)?.let(onSelect) },
+        backdrop = LocalGlassBackdrop.current,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(HomeFilter.entries) { filter ->
-            LiquidGlassFilterChip(
-                label = filter.label,
-                selected = filter == selected,
-                onClick = { onSelect(filter) },
-            )
-        }
-    }
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        height = 38.dp,
+        fontSize = 11.5.sp,
+        accentSelectedText = true,
+    )
 }
 
 @Composable
@@ -300,20 +233,20 @@ fun SubFilterChips(
     onSelect: (SubFilter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    val entries = SubFilter.entries
+    val selectedIndex = entries.indexOf(selected).coerceAtLeast(0)
+    LiquidGlassSliderTabs(
+        options = entries.map { it.label },
+        selectedIndex = selectedIndex,
+        onSelect = { idx -> entries.getOrNull(idx)?.let(onSelect) },
+        backdrop = LocalGlassBackdrop.current,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        SubFilter.entries.forEach { filter ->
-            LiquidGlassFilterChip(
-                label = filter.label,
-                selected = filter == selected,
-                onClick = { onSelect(filter) },
-            )
-        }
-    }
+        height = 38.dp,
+        fontSize = 12.5.sp,
+        accentSelectedText = true,
+    )
 }
 
 @Composable
