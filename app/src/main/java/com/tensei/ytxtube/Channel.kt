@@ -58,7 +58,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.extractor.Page
 
-
 val LocalChannelOpener = staticCompositionLocalOf<(String) -> Unit> { {} }
 
 enum class ChannelTab(val label: String) {
