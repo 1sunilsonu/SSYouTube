@@ -1,23 +1,16 @@
 package com.tensei.ytxtube
-import androidx.compose.ui.window.Dialog
-import android.provider.DocumentsContract
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.graphics.Brush
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.rememberLauncherForActivityResult
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -55,38 +48,36 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.NavigateNext
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DataUsage
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.SystemUpdate
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -97,6 +88,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -105,20 +97,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 @Composable
 fun SettingsScreen(
@@ -131,17 +127,19 @@ fun SettingsScreen(
 ) {
     val c = MaterialTheme.colorScheme
     val context = LocalContext.current
+    val activity = context as? Activity
     val scope = rememberCoroutineScope()
     val profile = Account.profile
     val scrollState = rememberScrollState()
 
     var cacheMessage by remember { mutableStateOf<String?>(null) }
     var activeFloatingSection by remember { mutableStateOf<SettingsFloatingSection?>(null) }
+    var showRefreshRateDialog by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateFeedback by remember { mutableStateOf<String?>(null) }
 
-    val isOverlayOpen = activeFloatingSection != null || showSignOutConfirm || checkingUpdate || updateFeedback != null
+    val isOverlayOpen = activeFloatingSection != null || showRefreshRateDialog || showSignOutConfirm || checkingUpdate || updateFeedback != null
     val blurRadius by animateDpAsState(
         targetValue = if (isOverlayOpen && Build.VERSION.SDK_INT >= 31) 16.dp else 0.dp,
         animationSpec = tween(220),
@@ -189,6 +187,16 @@ fun SettingsScreen(
                         title = I18n.t("appearance_theme", "Appearance & Theme"),
                         subtitle = I18n.t("appearance_sub", "Theme mode, color palette and UI style"),
                         onClick = { activeFloatingSection = SettingsFloatingSection.APPEARANCE },
+                    )
+                }
+
+                SettingsSectionHeader("Display & Smoothness")
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Rounded.Refresh,
+                        title = "Refresh Rate (60 / 90 / 120 Hz)",
+                        subtitle = "Active: ${RefreshRateSettings.displayLabel}",
+                        onClick = { showRefreshRateDialog = true },
                     )
                 }
 
@@ -272,12 +280,6 @@ fun SettingsScreen(
                             }
                         },
                     )
-                    val openRepo: (String) -> Unit = { url ->
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }
-                    }
-                    
                     val telegram = "https://t.me/sunilsonuphotography"
                     val openTelegram: () -> Unit = {
                         val app = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=sunilsonuphotography"))
@@ -300,6 +302,19 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.28f))
+            )
+        }
+
+        if (showRefreshRateDialog) {
+            RefreshRateSelectionDialog(
+                activity = activity,
+                currentHz = RefreshRateSettings.targetHz,
+                onSelectHz = { hz ->
+                    RefreshRateSettings.set(hz)
+                    activity?.let { RefreshRateSettings.applyToActivity(it) }
+                    showRefreshRateDialog = false
+                },
+                onDismiss = { showRefreshRateDialog = false },
             )
         }
 
@@ -552,6 +567,121 @@ fun SettingsScreen(
     }
 }
 
+@Composable
+private fun RefreshRateSelectionDialog(
+    activity: Activity?,
+    currentHz: Int,
+    onSelectHz: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    val supported = remember(activity) { RefreshRateSettings.supportedRates(activity) }
+    val options = remember(supported) {
+        buildList {
+            add(0 to ("Auto (Max Smooth)" to "Automatically uses your screen's highest Hz (${supported.maxOrNull() ?: 120} Hz)"))
+            val allRates = (supported + listOf(60, 90, 120)).distinct().sorted()
+            allRates.forEach { hz ->
+                val isSupported = supported.any { kotlin.math.abs(it - hz) <= 4 }
+                val sub = when {
+                    hz <= 60 -> "Standard 60Hz smooth & battery saver"
+                    isSupported -> "Supported by your display hardware"
+                    else -> "Locks up to ${hz}Hz if supported by screen"
+                }
+                add(hz to ("$hz Hz" to sub))
+            }
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = c.surfaceContainer),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = "Display Refresh Rate",
+                    fontFamily = RoundedHeavy,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = c.onSurface,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Detected screen modes: ${supported.joinToString(" / ") { "${it}Hz" }}",
+                    fontSize = 12.sp,
+                    color = c.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(14.dp))
+
+                options.forEach { (hz, textPair) ->
+                    val selected = currentHz == hz
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (selected) c.primaryContainer.copy(alpha = 0.5f) else Color.Transparent)
+                            .pressable { onSelectHz(hz) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = textPair.first,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = if (selected) c.primary else c.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = textPair.second,
+                                fontSize = 11.5.sp,
+                                color = c.onSurfaceVariant,
+                            )
+                        }
+                        if (selected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(c.primary),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = "Selected",
+                                    tint = c.onPrimary,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .pressable(onClick = onDismiss)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text(I18n.t("cancel", "Cancel"), color = c.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private enum class SettingsFloatingSection {
     APPEARANCE,
     GENERAL_MODS,
@@ -752,7 +882,6 @@ private fun SettingsFloatingDialog(
         }
     }
 }
-
 @Composable
 private fun AppearanceThemeContent(context: Context) {
     val c = MaterialTheme.colorScheme
@@ -790,30 +919,30 @@ private fun AppearanceThemeContent(context: Context) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-            listOf(
-                "system" to I18n.t("theme_system", "System"),
-                "dark" to I18n.t("theme_dark", "Dark"),
-                "light" to I18n.t("theme_light", "Light"),
-                "amoled" to I18n.t("theme_amoled", "AMOLED"),
-            ).forEach { (mode, label) ->
-                val on = ThemeSettings.mode == mode
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .pressable { ThemeSettings.chooseMode(mode) }
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (on) c.primary else c.surfaceContainerHigh)
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        label,
-                        color = if (on) c.onPrimary else c.onSurfaceVariant,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
-                        fontSize = 12.sp
-                    )
+                listOf(
+                    "system" to I18n.t("theme_system", "System"),
+                    "dark" to I18n.t("theme_dark", "Dark"),
+                    "light" to I18n.t("theme_light", "Light"),
+                    "amoled" to I18n.t("theme_amoled", "AMOLED"),
+                ).forEach { (mode, label) ->
+                    val on = ThemeSettings.mode == mode
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .pressable { ThemeSettings.chooseMode(mode) }
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (on) c.primary else c.surfaceContainerHigh)
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            label,
+                            color = if (on) c.onPrimary else c.onSurfaceVariant,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
-            }
             }
         }
 
@@ -1259,8 +1388,10 @@ private fun DownloadFolderSelectionDialog(
 @Composable
 private fun GeneralModificationContent(context: Context) {
     val c = MaterialTheme.colorScheme
+    val activity = context as? Activity
     var showVideoQualityDialog by remember { mutableStateOf(false) }
     var showShortsQualityDialog by remember { mutableStateOf(false) }
+    var showRefreshRateDialog by remember { mutableStateOf(false) }
     var showFolderDialog by remember { mutableStateOf(false) }
 
     val folderPicker = rememberLauncherForActivityResult(
@@ -1407,6 +1538,14 @@ private fun GeneralModificationContent(context: Context) {
             onClick = { showShortsQualityDialog = true },
         )
 
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
+        SettingsClickRow(
+            title = "Display Refresh Rate",
+            subtitle = RefreshRateSettings.displayLabel,
+            onClick = { showRefreshRateDialog = true },
+        )
+
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 8.dp))
 
         Text(
@@ -1422,6 +1561,19 @@ private fun GeneralModificationContent(context: Context) {
             title = I18n.t("select_download_folder", "Select Download folder"),
             subtitle = currentPath,
             onClick = { showFolderDialog = true },
+        )
+    }
+
+    if (showRefreshRateDialog) {
+        RefreshRateSelectionDialog(
+            activity = activity,
+            currentHz = RefreshRateSettings.targetHz,
+            onSelectHz = { hz ->
+                RefreshRateSettings.set(hz)
+                activity?.let { RefreshRateSettings.applyToActivity(it) }
+                showRefreshRateDialog = false
+            },
+            onDismiss = { showRefreshRateDialog = false },
         )
     }
 
@@ -1484,6 +1636,7 @@ private fun GeneralModificationContent(context: Context) {
         )
     }
 }
+
 private data class StorageData(
     val deviceTotal: Long,
     val deviceUsed: Long,
@@ -1770,8 +1923,8 @@ private fun LanguageContent(context: Context, onLanguageSelected: () -> Unit) {
         } else {
             LanguageSettings.ALL_LANGUAGES.filter {
                 it.name.contains(searchQuery, ignoreCase = true) ||
-                it.nativeName.contains(searchQuery, ignoreCase = true) ||
-                it.code.contains(searchQuery, ignoreCase = true)
+                    it.nativeName.contains(searchQuery, ignoreCase = true) ||
+                    it.code.contains(searchQuery, ignoreCase = true)
             }
         }
     }
