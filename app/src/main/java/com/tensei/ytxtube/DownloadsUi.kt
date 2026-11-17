@@ -33,13 +33,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -74,10 +71,10 @@ private val mp3QualityOptions = listOf(
     Mp3QualityOption(64, "64 kbps · Data Saver MP3", "Smallest File Size · Fast"),
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)? = null, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
+    val dark = isDarkTheme()
     var activeTab by remember(video.id) { mutableStateOf(0) } // 0 = Video, 1 = MP3 Audio
     var options by remember(video.id) { mutableStateOf<List<DownloadOption>?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
@@ -93,11 +90,15 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
             .onFailure { error = it.message ?: "Could not load the available qualities" }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surfaceContainerLow,
-    ) {
+    LiquidGlassOverlayCard(onDismiss = onDismiss, centered = false) {
+        Box(
+            Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 10.dp, bottom = 6.dp)
+                .size(width = 38.dp, height = 4.dp)
+                .clip(CircleShape)
+                .background(c.onSurfaceVariant.copy(alpha = 0.35f)),
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -109,6 +110,7 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                 fontFamily = RoundedHeavy,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
+                color = c.onSurface,
             )
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -122,6 +124,7 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                         lineHeight = 18.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        color = c.onSurface,
                     )
                     Text(
                         video.channel,
@@ -138,8 +141,12 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(CircleShape)
-                    .background(c.surfaceContainerHigh.copy(alpha = 0.65f))
-                    .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
+                    .background(if (dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f))
+                    .border(
+                        1.dp,
+                        if (dark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.10f),
+                        CircleShape,
+                    )
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -256,19 +263,27 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                     mp3QualityOptions.forEach { mp3 ->
                         val isSelected = selectedMp3Kbps == mp3.kbps
                         val estBytes = if (video.durationSec > 0) (mp3.kbps * 1000L * video.durationSec) / 8L else -1L
+                        val cardShape = RoundedCornerShape(14.dp)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .pressable(pressedScale = 0.98f) { selectedMp3Kbps = mp3.kbps }
-                                .clip(RoundedCornerShape(14.dp))
+                                .clip(cardShape)
                                 .background(
-                                    if (isSelected) c.primaryContainer.copy(alpha = 0.55f)
-                                    else c.surfaceContainerHigh.copy(alpha = 0.35f)
+                                    when {
+                                        isSelected -> c.primary.copy(alpha = 0.16f)
+                                        dark -> Color.White.copy(alpha = 0.06f)
+                                        else -> Color.Black.copy(alpha = 0.045f)
+                                    }
                                 )
                                 .border(
-                                    width = if (isSelected) 1.dp else 0.dp,
-                                    color = if (isSelected) c.primary.copy(alpha = 0.45f) else Color.Transparent,
-                                    shape = RoundedCornerShape(14.dp),
+                                    width = 1.dp,
+                                    color = when {
+                                        isSelected -> c.primary.copy(alpha = 0.55f)
+                                        dark -> Color.White.copy(alpha = 0.14f)
+                                        else -> Color.Black.copy(alpha = 0.08f)
+                                    },
+                                    shape = cardShape,
                                 )
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -281,7 +296,7 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                             )
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(mp3.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(mp3.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.onSurface)
                                 val sub = buildString {
                                     append(mp3.subtitle)
                                     if (estBytes > 0) {
@@ -326,12 +341,29 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
 @Composable
 private fun QualityChoiceRow(option: DownloadOption, selected: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
+    val dark = isDarkTheme()
+    val cardShape = RoundedCornerShape(14.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .pressable(pressedScale = 0.98f, onClick = onClick)
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) c.primaryContainer.copy(alpha = 0.55f) else c.surfaceContainerHigh.copy(alpha = 0.35f))
+            .clip(cardShape)
+            .background(
+                when {
+                    selected -> c.primary.copy(alpha = 0.16f)
+                    dark -> Color.White.copy(alpha = 0.06f)
+                    else -> Color.Black.copy(alpha = 0.045f)
+                }
+            )
+            .border(
+                width = 1.dp,
+                color = when {
+                    selected -> c.primary.copy(alpha = 0.55f)
+                    dark -> Color.White.copy(alpha = 0.14f)
+                    else -> Color.Black.copy(alpha = 0.08f)
+                },
+                shape = cardShape,
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -343,7 +375,7 @@ private fun QualityChoiceRow(option: DownloadOption, selected: Boolean, onClick:
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(option.label, fontWeight = FontWeight.Bold, fontSize = 14.5.sp)
+            Text(option.label, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = c.onSurface)
             val subtitle = buildString {
                 qualityTag(option.height)?.let { append(it) }
                 if (option.estimatedBytes > 0) {
@@ -456,11 +488,33 @@ fun DownloadsScreen(
 @Composable
 private fun DownloadSectionPill(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
+    val dark = isDarkTheme()
+    val backdrop = LocalGlassBackdrop.current
+    val glassSupported = backdrop != null && GlassQuality.effectsSupported
+    val tint = when {
+        selected -> c.primary.copy(alpha = 0.85f)
+        dark -> Color(0xFF22252E).copy(alpha = 0.50f)
+        else -> Color.White.copy(alpha = 0.60f)
+    }
+    val spec = glassSpec(
+        shape = CircleShape,
+        tint = tint,
+        blur = 14.dp,
+        refractionHeight = 10.dp,
+        refractionAmount = 14.dp,
+    )
     Row(
         Modifier
-            .clip(CircleShape)
-            .background(if (selected) c.primary else c.surfaceContainerHigh)
             .pressable(onClick = onClick)
+            .then(
+                if (glassSupported && backdrop != null) {
+                    Modifier.liquidGlass(backdrop, spec)
+                } else {
+                    Modifier
+                        .clip(CircleShape)
+                        .background(if (selected) c.primary else c.surfaceContainerHigh)
+                }
+            )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
