@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import java.util.Locale
 
 private data class Mp3QualityOption(
@@ -74,7 +76,8 @@ private val mp3QualityOptions = listOf(
 @Composable
 fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)? = null, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
-    val dark = isDarkTheme()
+    val isLight = !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
+    val isAmoled = ThemeSettings.mode == "amoled"
     var activeTab by remember(video.id) { mutableStateOf(0) } // 0 = Video, 1 = MP3 Audio
     var options by remember(video.id) { mutableStateOf<List<DownloadOption>?>(null) }
     var error by remember(video.id) { mutableStateOf<String?>(null) }
@@ -137,56 +140,32 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
             }
             Spacer(Modifier.height(14.dp))
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(CircleShape)
-                    .background(if (dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f))
-                    .border(
-                        1.dp,
-                        if (dark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.10f),
-                        CircleShape,
-                    )
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                listOf("Video (MP4/WebM)" to 0, "MP3 Audio" to 1).forEach { (label, idx) ->
-                    val isSelected = activeTab == idx
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(CircleShape)
-                            .background(
-                                if (isSelected) {
-                                    Brush.horizontalGradient(
-                                        listOf(c.primary, c.primary.copy(alpha = 0.85f))
-                                    )
+            val tabBackdrop = rememberLayerBackdrop()
+            Box(Modifier.fillMaxWidth()) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .clip(CircleShape)
+                        .layerBackdrop(tabBackdrop)
+                        .background(
+                            Brush.horizontalGradient(
+                                if (isLight) {
+                                    listOf(Color(0xFFE7ECF5).copy(alpha = 0.85f), Color(0xFFF6F8FC).copy(alpha = 0.85f))
                                 } else {
-                                    Brush.horizontalGradient(
-                                        listOf(Color.Transparent, Color.Transparent)
-                                    )
+                                    listOf(c.primary.copy(alpha = 0.14f), Color(0xFF1A1E28).copy(alpha = 0.80f))
                                 }
                             )
-                            .pressable(pressedScale = 0.97f) { activeTab = idx }
-                            .padding(vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            if (idx == 0) Icons.Rounded.Download else Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            tint = if (isSelected) c.onPrimary else c.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp),
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            label,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = if (isSelected) c.onPrimary else c.onSurfaceVariant,
-                        )
-                    }
-                }
+                )
+                LiquidGlassSliderTabs(
+                    options = listOf("Video (MP4/WebM)", "MP3 Audio"),
+                    selectedIndex = activeTab,
+                    onSelect = { activeTab = it },
+                    backdrop = tabBackdrop,
+                    height = 42.dp,
+                    fontSize = 13.sp,
+                    accentSelectedText = true,
+                )
             }
 
             Spacer(Modifier.height(14.dp))
@@ -271,17 +250,19 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                                 .clip(cardShape)
                                 .background(
                                     when {
-                                        isSelected -> c.primary.copy(alpha = 0.16f)
-                                        dark -> Color.White.copy(alpha = 0.06f)
-                                        else -> Color.Black.copy(alpha = 0.045f)
+                                        isSelected && isLight -> c.primary.copy(alpha = 0.12f)
+                                        isSelected -> c.primary.copy(alpha = 0.18f)
+                                        isLight -> Color.White.copy(alpha = 0.72f)
+                                        isAmoled -> Color.White.copy(alpha = 0.05f)
+                                        else -> Color.White.copy(alpha = 0.07f)
                                     }
                                 )
                                 .border(
                                     width = 1.dp,
                                     color = when {
-                                        isSelected -> c.primary.copy(alpha = 0.55f)
-                                        dark -> Color.White.copy(alpha = 0.14f)
-                                        else -> Color.Black.copy(alpha = 0.08f)
+                                        isSelected -> c.primary.copy(alpha = 0.58f)
+                                        isLight -> Color.White.copy(alpha = 0.95f)
+                                        else -> Color.White.copy(alpha = 0.15f)
                                     },
                                     shape = cardShape,
                                 )
@@ -341,7 +322,8 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
 @Composable
 private fun QualityChoiceRow(option: DownloadOption, selected: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
-    val dark = isDarkTheme()
+    val isLight = !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
+    val isAmoled = ThemeSettings.mode == "amoled"
     val cardShape = RoundedCornerShape(14.dp)
     Row(
         modifier = Modifier
@@ -350,17 +332,19 @@ private fun QualityChoiceRow(option: DownloadOption, selected: Boolean, onClick:
             .clip(cardShape)
             .background(
                 when {
-                    selected -> c.primary.copy(alpha = 0.16f)
-                    dark -> Color.White.copy(alpha = 0.06f)
-                    else -> Color.Black.copy(alpha = 0.045f)
+                    selected && isLight -> c.primary.copy(alpha = 0.12f)
+                    selected -> c.primary.copy(alpha = 0.18f)
+                    isLight -> Color.White.copy(alpha = 0.72f)
+                    isAmoled -> Color.White.copy(alpha = 0.05f)
+                    else -> Color.White.copy(alpha = 0.07f)
                 }
             )
             .border(
                 width = 1.dp,
                 color = when {
-                    selected -> c.primary.copy(alpha = 0.55f)
-                    dark -> Color.White.copy(alpha = 0.14f)
-                    else -> Color.Black.copy(alpha = 0.08f)
+                    selected -> c.primary.copy(alpha = 0.58f)
+                    isLight -> Color.White.copy(alpha = 0.95f)
+                    else -> Color.White.copy(alpha = 0.15f)
                 },
                 shape = cardShape,
             )
@@ -403,6 +387,7 @@ fun DownloadsScreen(
     onAccount: () -> Unit,
     scrollToTop: Int = 0,
 ) {
+    val c = MaterialTheme.colorScheme
     val tasks = Downloads.tasks
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -430,12 +415,32 @@ fun DownloadsScreen(
     ) { top ->
         LazyColumn(contentPadding = contentPadding.withTop(top)) {
             item(key = "sections") {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                val sectionBackdrop = rememberLayerBackdrop()
+                val labels = listOf(
+                    if (videos.isNotEmpty()) "Videos (${videos.size})" else "Videos",
+                    if (music.isNotEmpty()) "Music (${music.size})" else "Music",
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
-                    DownloadSectionPill("Videos", videos.size, section == 0) { section = 0 }
-                    DownloadSectionPill("Music", music.size, section == 1) { section = 1 }
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .clip(CircleShape)
+                            .layerBackdrop(sectionBackdrop)
+                            .background(c.surfaceContainerHigh)
+                    )
+                    LiquidGlassSliderTabs(
+                        options = labels,
+                        selectedIndex = section,
+                        onSelect = { section = it },
+                        backdrop = sectionBackdrop,
+                        height = 40.dp,
+                        fontSize = 13.sp,
+                        accentSelectedText = true,
+                    )
                 }
             }
             if (shown.isEmpty()) {
@@ -481,57 +486,6 @@ fun DownloadsScreen(
                     item(key = "footer") { Spacer(Modifier.height(20.dp)) }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun DownloadSectionPill(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
-    val c = MaterialTheme.colorScheme
-    val dark = isDarkTheme()
-    val backdrop = LocalGlassBackdrop.current
-    val glassSupported = backdrop != null && GlassQuality.effectsSupported
-    val tint = when {
-        selected -> c.primary.copy(alpha = 0.85f)
-        dark -> Color(0xFF22252E).copy(alpha = 0.50f)
-        else -> Color.White.copy(alpha = 0.60f)
-    }
-    val spec = glassSpec(
-        shape = CircleShape,
-        tint = tint,
-        blur = 14.dp,
-        refractionHeight = 10.dp,
-        refractionAmount = 14.dp,
-    )
-    Row(
-        Modifier
-            .pressable(onClick = onClick)
-            .then(
-                if (glassSupported && backdrop != null) {
-                    Modifier.liquidGlass(backdrop, spec)
-                } else {
-                    Modifier
-                        .clip(CircleShape)
-                        .background(if (selected) c.primary else c.surfaceContainerHigh)
-                }
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            label,
-            color = if (selected) c.onPrimary else c.onSurface,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        if (count > 0) {
-            Spacer(Modifier.width(6.dp))
-            Text(
-                count.toString(),
-                color = if (selected) c.onPrimary.copy(alpha = 0.8f) else c.onSurfaceVariant,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
         }
     }
 }
