@@ -38,13 +38,84 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+
+private object HomeFeedCache {
+    private const val PREFS_NAME = "ss_home_feed_cache"
+    private const val KEY_VIDEOS = "cached_home_videos_v1"
+    private const val MAX_CACHED = 30
+
+    private fun prefs(context: Context? = null): SharedPreferences? {
+        val appCtx = context?.applicationContext ?: runCatching {
+            YTXTubeApplication.appContext
+        }.getOrNull() ?: runCatching {
+            Class.forName("android.app.ActivityThread")
+                .getMethod("currentApplication")
+                .invoke(null) as? Application
+        }.getOrNull() ?: return null
+        return appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    fun load(context: Context? = null): List<VideoItem> {
+        val raw = prefs(context)?.getString(KEY_VIDEOS, null).orEmpty()
+        if (raw.isBlank()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optString("id")
+                    val title = o.optString("title")
+                    if (id.isNotBlank() && title.isNotBlank()) {
+                        add(
+                            VideoItem(
+                                id = id,
+                                title = title,
+                                channel = o.optString("channel"),
+                                channelUrl = o.optString("channelUrl").ifBlank { null },
+                                thumbnail = o.optString("thumbnail").ifBlank { feedThumbnailUrl(id) },
+                                avatar = o.optString("avatar").ifBlank { null },
+                                durationSec = o.optLong("durationSec", 0L),
+                                views = o.optLong("views", -1L),
+                                uploaded = o.optString("uploaded").ifBlank { null },
+                                isLive = false,
+                            )
+                        )
+                    }
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun save(videos: List<VideoItem>, context: Context? = null) {
+        if (videos.isEmpty()) return
+        runCatching {
+            val arr = JSONArray()
+            videos.take(MAX_CACHED).forEach { v ->
+                arr.put(
+                    JSONObject()
+                        .put("id", v.id)
+                        .put("title", v.title)
+                        .put("channel", v.channel)
+                        .put("channelUrl", v.channelUrl.orEmpty())
+                        .put("thumbnail", v.thumbnail.orEmpty())
+                        .put("avatar", v.avatar.orEmpty())
+                        .put("durationSec", v.durationSec)
+                        .put("views", v.views)
+                        .put("uploaded", v.uploaded.orEmpty())
+                )
+            }
+            prefs(context)?.edit()?.putString(KEY_VIDEOS, arr.toString())?.apply()
+        }
+    }
+}
 
 private object SeenFeedStore {
     private const val PREFS_NAME = "ss_seen_feed_prefs"
     private const val KEY_SEEN_IDS = "seen_video_ids"
-    private const val MAX_SEEN = 350
+    private const val MAX_SEEN = 450
 
     private val lock = Any()
     private var prefs: SharedPreferences? = null
@@ -54,6 +125,8 @@ private object SeenFeedStore {
         synchronized(lock) {
             if (prefs != null) return
             val appCtx = context?.applicationContext ?: runCatching {
+                YTXTubeApplication.appContext
+            }.getOrNull() ?: runCatching {
                 Class.forName("android.app.ActivityThread")
                     .getMethod("currentApplication")
                     .invoke(null) as? Application
@@ -99,7 +172,7 @@ private object SeenFeedStore {
 internal object UserTasteStore {
     private const val PREFS_NAME = "ss_user_taste_prefs"
     private const val KEY_WATCHED = "watched_history_json"
-    private const val MAX_WATCHED = 25
+    private const val MAX_WATCHED = 30
 
     data class WatchedEntry(val id: String, val title: String, val channel: String, val topic: String)
 
@@ -111,6 +184,8 @@ internal object UserTasteStore {
         synchronized(lock) {
             if (prefs != null) return
             val appCtx = context?.applicationContext ?: runCatching {
+                YTXTubeApplication.appContext
+            }.getOrNull() ?: runCatching {
                 Class.forName("android.app.ActivityThread")
                     .getMethod("currentApplication")
                     .invoke(null) as? Application
@@ -198,9 +273,11 @@ internal object UserTasteStore {
 class FeedState(
     private val scope: CoroutineScope,
     private val freshOnRefresh: Boolean = false,
+    initialVideos: List<VideoItem> = emptyList(),
+    private val onVideosUpdated: ((List<VideoItem>) -> Unit)? = null,
     private val loader: suspend (next: String?) -> FeedPage,
 ) {
-    var videos by mutableStateOf<List<VideoItem>>(emptyList())
+    var videos by mutableStateOf(initialVideos)
         private set
     var loading by mutableStateOf(false)
         private set
@@ -212,7 +289,7 @@ class FeedState(
 
     var refreshing by mutableStateOf(false)
         private set
-    private var next: String? = null
+    private var next: String? = if (initialVideos.isNotEmpty()) "yt_page:1" else null
     private var loaded = false
 
     private val shown = HashSet<String>()
@@ -230,12 +307,17 @@ class FeedState(
         job = scope.launch {
             runCatching { if (freshOnRefresh && shown.isNotEmpty()) loadFresh() else loader(null) }
                 .onSuccess {
-                    videos = it.videos
+                    if (it.videos.isNotEmpty()) {
+                        videos = it.videos
+                        onVideosUpdated?.invoke(it.videos)
+                    }
                     next = it.next
                     generation++
                     if (freshOnRefresh) it.videos.forEach { v -> shown += v.id }
                 }
-                .onFailure { error = friendly(it) }
+                .onFailure {
+                    if (videos.isEmpty()) error = friendly(it)
+                }
             loading = false
             refreshing = false
         }
@@ -254,7 +336,9 @@ class FeedState(
                     if (freshOnRefresh) added.forEach { v -> shown += v.id }
                     next = page.next
                 }
-                .onFailure { error = friendly(it) }
+                .onFailure {
+                    if (videos.isEmpty()) error = friendly(it)
+                }
             loading = false
         }
     }
@@ -294,7 +378,12 @@ class FeedState(
 @Stable
 class LibraryData(scope: CoroutineScope) {
 
-    val home = FeedState(scope, freshOnRefresh = false) { loadYouTubeStyleHome(it) }
+    val home = FeedState(
+        scope = scope,
+        freshOnRefresh = false,
+        initialVideos = HomeFeedCache.load(),
+        onVideosUpdated = { HomeFeedCache.save(it) },
+    ) { loadYouTubeStyleHome(it) }
     val subscriptions = FeedState(scope) { InnerTube.subscriptionsFeed(it) }
     val history = FeedState(scope) { InnerTube.history(it) }
     var channels by mutableStateOf<List<ChannelRef>>(emptyList())
@@ -314,26 +403,40 @@ class LibraryData(scope: CoroutineScope) {
         "trending music india official video",
         "arijit singh latest songs official",
         "indian viral trending videos today",
+        "hindi comedy videos india trending",
+        "indian cricket highlights match today",
+        "new south indian hindi dubbed movie",
+        "indian vlogs trending today",
+        "bollywood dance songs party hits",
+        "indian stand up comedy latest",
+        "hindi tech review gadget india",
+        "indian street food vlog hindi",
     )
 
     private suspend fun fetchFreshQueryVideos(query: String, targetCount: Int): List<VideoItem> {
-        val page1 = runCatching { YouTube.searchPage(query, null) }.getOrNull() ?: return emptyList()
+        val page1 = withTimeoutOrNull(3_500L) {
+            runCatching { YouTube.searchPage(query, null) }.getOrNull()
+        } ?: return emptyList()
         val unseen1 = page1.videos.filterNot { SeenFeedStore.isSeen(it.id) }
         if (unseen1.size >= targetCount || page1.next == null) {
             return if (unseen1.isNotEmpty()) unseen1.shuffled() else page1.videos.shuffled()
         }
-        val page2 = runCatching { YouTube.searchPage(query, page1.next) }.getOrNull()
+        val page2 = withTimeoutOrNull(2_500L) {
+            runCatching { YouTube.searchPage(query, page1.next) }.getOrNull()
+        }
         val unseen2 = page2?.videos?.filterNot { SeenFeedStore.isSeen(it.id) }.orEmpty()
         val combined = (unseen1 + unseen2)
         return if (combined.isNotEmpty()) combined.shuffled() else (page1.videos + page2?.videos.orEmpty()).shuffled()
     }
 
     private suspend fun fetchRelatedForWatched(videoId: String): List<VideoItem> {
-        return runCatching {
-            val related = YouTube.details(videoId).related.filter { !it.isLive }
-            val unseen = related.filterNot { SeenFeedStore.isSeen(it.id) }
-            if (unseen.isNotEmpty()) unseen.shuffled() else related.shuffled()
-        }.getOrDefault(emptyList())
+        return withTimeoutOrNull(3_500L) {
+            runCatching {
+                val related = YouTube.details(videoId).related.filter { !it.isLive }
+                val unseen = related.filterNot { SeenFeedStore.isSeen(it.id) }
+                if (unseen.isNotEmpty()) unseen.shuffled() else related.shuffled()
+            }.getOrDefault(emptyList())
+        }.orEmpty()
     }
 
     private suspend fun loadYouTubeStyleHome(next: String?): FeedPage {
@@ -363,36 +466,42 @@ class LibraryData(scope: CoroutineScope) {
                 else emptyList()
             }
 
-            val searchQuery = when {
-                searches.isEmpty() -> null
-                pageNum == 1 && searches.size > 1 -> listOf(searches[0], searches.drop(1).random()).random()
-                else -> searches.take(8).random()
+            val searchQueriesToUse = when {
+                searches.isEmpty() -> emptyList()
+                searches.size == 1 -> listOf(searches[0])
+                pageNum == 1 -> listOf(searches[0], searches.drop(1).random()).distinct()
+                else -> searches.take(10).shuffled().take(2)
             }
-            val searchDef = async {
-                if (!searchQuery.isNullOrBlank()) fetchFreshQueryVideos(searchQuery, 8).take(8)
-                else emptyList()
+            val searchDefs = searchQueriesToUse.map { sq ->
+                async { fetchFreshQueryVideos(sq, 8).take(8) }
             }
 
             val trendingDef = async {
-                runCatching {
-                    val raw = if (Account.signedIn && pageNum == 1) {
-                        InnerTube.homeFeed(null).videos
-                    } else {
-                        YouTube.trending(null).videos
-                    }
-                    val unseen = raw.filterNot { SeenFeedStore.isSeen(it.id) }
-                    (if (unseen.isNotEmpty()) unseen else raw).shuffled().take(8)
-                }.getOrDefault(emptyList())
+                withTimeoutOrNull(3_500L) {
+                    runCatching {
+                        val raw = if (Account.signedIn && pageNum == 1) {
+                            InnerTube.homeFeed(null).videos
+                        } else {
+                            YouTube.trending(null).videos
+                        }
+                        val unseen = raw.filterNot { SeenFeedStore.isSeen(it.id) }
+                        (if (unseen.isNotEmpty()) unseen else raw).shuffled().take(10)
+                    }.getOrDefault(emptyList())
+                }.orEmpty()
             }
 
-            val discoveryQueries = indianDiscoveryQueries.shuffled().take(if (watched.isEmpty() && searches.isEmpty()) 3 else 1)
-            val discoveryDefs = discoveryQueries.map { q ->
-                async { fetchFreshQueryVideos(q, 8).take(8) }
+            val indiaCount = if (watched.isEmpty() && searches.isEmpty()) 3 else 2
+            val startIdx = ((pageNum - 1) * indiaCount) % indianDiscoveryQueries.size
+            val pickedIndiaQueries = (0 until indiaCount).map { offset ->
+                indianDiscoveryQueries[(startIdx + offset) % indianDiscoveryQueries.size]
+            }.distinct()
+            val discoveryDefs = pickedIndiaQueries.map { q ->
+                async { fetchFreshQueryVideos(q, 10).take(10) }
             }
 
             val relatedLists = relatedDefs.map { it.await() }
             val watchTopicVideos = watchTopicDef.await()
-            val searchVideos = searchDef.await()
+            val searchLists = searchDefs.map { it.await() }
             val trendingVideos = trendingDef.await()
             val discoveryLists = discoveryDefs.map { it.await() }
 
@@ -404,21 +513,23 @@ class LibraryData(scope: CoroutineScope) {
                 }
             }
 
-            val maxRows = 12
+            val maxRows = 14
             for (i in 0 until maxRows) {
+                for (sqList in searchLists) {
+                    addUnique(sqList.getOrNull(i))
+                }
                 for (rel in relatedLists) {
                     addUnique(rel.getOrNull(i))
                 }
                 addUnique(watchTopicVideos.getOrNull(i))
-                addUnique(searchVideos.getOrNull(i))
                 addUnique(trendingVideos.getOrNull(i))
                 for (disc in discoveryLists) {
                     addUnique(disc.getOrNull(i))
                 }
             }
 
-            SeenFeedStore.markSeen(merged.take(18).map { it.id })
-            val nextToken = if (merged.isNotEmpty() && pageNum < 15) "yt_page:${pageNum + 1}" else null
+            SeenFeedStore.markSeen(merged.take(22).map { it.id })
+            val nextToken = "yt_page:${pageNum + 1}"
             FeedPage(merged, nextToken)
         }
     }
@@ -479,7 +590,9 @@ fun FeedList(
     }
     val list = rememberScrollToTop(scrollToTop)
 
-    LaunchedEffect(feed.generation, filterScrollKey) { list.scrollToItem(0) }
+    LaunchedEffect(feed.generation, filterScrollKey) {
+        if (feed.generation > 1 || filterScrollKey != null) list.scrollToItem(0)
+    }
 
     LaunchedEffect(list.isScrollInProgress, listVideos) {
         if (!list.isScrollInProgress && listVideos.isNotEmpty()) {
@@ -504,7 +617,7 @@ fun FeedList(
     val nearEnd by remember {
         derivedStateOf {
             val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            last >= list.layoutInfo.totalItemsCount - 4
+            last >= list.layoutInfo.totalItemsCount - 6
         }
     }
     LaunchedEffect(nearEnd, listVideos.size) { if (nearEnd && listVideos.isNotEmpty()) feed.loadMore() }
