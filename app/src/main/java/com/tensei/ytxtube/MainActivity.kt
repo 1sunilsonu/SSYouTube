@@ -1,21 +1,11 @@
 package com.tensei.ytxtube
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.text.style.TextAlign
-import kotlinx.coroutines.delay
 import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
-import android.content.res.Configuration
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
@@ -27,30 +17,29 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.tappableElement
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,46 +54,39 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.abs
-import kotlin.math.roundToInt
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.VideoLibrary
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -118,53 +100,30 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-enum class RefreshRateMode(val hz: Int, val label: String, val subtitle: String) {
-    AUTO(0, "Auto (Max Supported)", "Automatically uses your screen's highest refresh rate (60/90/120Hz)"),
-    HZ_60(60, "60 Hz", "Standard smooth display & battery saver"),
-    HZ_90(90, "90 Hz", "High smoothness (90Hz displays)"),
-    HZ_120(120, "120 Hz", "Ultra-smooth 120Hz display"),
-}
-
-object RefreshRateSettings {
-    private const val PREFS_NAME = "display_refresh_prefs"
-    private const val KEY_MODE = "refresh_rate_mode"
-    private var prefs: SharedPreferences? = null
-
-    var mode by mutableStateOf(RefreshRateMode.AUTO)
-        private set
-
-    fun init(context: Context) {
-        if (prefs == null) {
-            prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        }
-        val saved = prefs?.getString(KEY_MODE, null)
-        mode = RefreshRateMode.entries.firstOrNull { it.name == saved } ?: RefreshRateMode.AUTO
-    }
-
-    fun set(context: Context, newMode: RefreshRateMode) {
-        init(context)
-        mode = newMode
-        prefs?.edit()?.putString(KEY_MODE, newMode.name)?.apply()
-    }
-}
 
 private object ColdStartSplashState {
     var hasPlayed = false
@@ -179,9 +138,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        RefreshRateSettings.init(this)
         enableEdgeToEdge()
-        applyRefreshRate()
+        RefreshRateSettings.applyToActivity(this)
         enableHdrOutput()
 
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -207,7 +165,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        applyRefreshRate()
+        RefreshRateSettings.applyToActivity(this)
     }
 
     override fun onPause() {
@@ -240,55 +198,6 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         intentHandler?.invoke(intent)
-    }
-
-    internal fun applyRefreshRate() {
-        runCatching {
-            val targetMode = RefreshRateSettings.mode
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val disp = display ?: return
-                val currentMode = disp.mode
-                val modes = disp.supportedModes
-                val sameResModes = modes.filter {
-                    it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight
-                }.ifEmpty { modes.toList() }
-
-                val chosenMode = if (targetMode == RefreshRateMode.AUTO) {
-                    sameResModes.maxByOrNull { it.refreshRate }
-                } else {
-                    val targetHz = targetMode.hz.toFloat()
-                    sameResModes.minByOrNull { abs(it.refreshRate - targetHz) }
-                }
-
-                if (chosenMode != null) {
-                    val lp = window.attributes
-                    lp.preferredDisplayModeId = chosenMode.modeId
-                    lp.preferredRefreshRate = chosenMode.refreshRate
-                    window.attributes = lp
-                }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                @Suppress("DEPRECATION")
-                val disp = windowManager.defaultDisplay ?: return
-                val currentMode = disp.mode
-                val modes = disp.supportedModes
-                val sameResModes = modes.filter {
-                    it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight
-                }.ifEmpty { modes.toList() }
-
-                val chosenMode = if (targetMode == RefreshRateMode.AUTO) {
-                    sameResModes.maxByOrNull { it.refreshRate }
-                } else {
-                    val targetHz = targetMode.hz.toFloat()
-                    sameResModes.minByOrNull { abs(it.refreshRate - targetHz) }
-                }
-
-                if (chosenMode != null) {
-                    val lp = window.attributes
-                    lp.preferredDisplayModeId = chosenMode.modeId
-                    window.attributes = lp
-                }
-            }
-        }
     }
 
     private fun enableHdrOutput() {
@@ -325,6 +234,7 @@ private val NavWidth = 368.dp
 private val NavLift = 10.dp
 private val MiniWidth = 368.dp
 private val MiniGap = 8.dp
+
 @Composable
 fun YtxTubeApp() {
     val c = MaterialTheme.colorScheme
@@ -429,8 +339,8 @@ fun YtxTubeApp() {
     val orientation = rememberOrientationController(activity)
     val playerOpen = player.current != null && player.expanded
 
-    LaunchedEffect(RefreshRateSettings.mode) {
-        mainActivity?.applyRefreshRate()
+    LaunchedEffect(RefreshRateSettings.targetHz) {
+        RefreshRateSettings.applyToActivity(activity)
     }
 
     orientation.Bind(playerOpen && !AudioOnly.enabled && !player.isMusicMode)
@@ -1075,7 +985,6 @@ fun YtxTubeApp() {
         }
     }
 }
-
 @Composable
 private fun QueueMessage(player: PlayerState, modifier: Modifier) {
     val message = player.actionMessage ?: return
