@@ -35,15 +35,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-
-
-
-
 @Stable
 class PlayerState(private val scope: CoroutineScope) {
     var controller by mutableStateOf<MediaController?>(null)
         internal set
-
 
     var current by mutableStateOf<VideoItem?>(null)
         private set
@@ -98,7 +93,6 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun skipNext() {
-
         if (isMusicMode && musicQueue.isNotEmpty()) {
             openMusicQueue(musicQueue, 0, expanded)
             return
@@ -141,7 +135,6 @@ class PlayerState(private val scope: CoroutineScope) {
         internal set
 
     init {
-
         scope.launch {
             snapshotFlow { StreamRecovery.recovering to StreamRecovery.failed }.collect { (_, failed) ->
                 syncFromPlayer()
@@ -156,10 +149,6 @@ class PlayerState(private val scope: CoroutineScope) {
         private set
 
     private var aspectFromFrames = false
-
-    
-
-
 
     val stageAspect: Float get() = if (AudioOnly.enabled) AudioStageAspect else {
         min(videoAspect.coerceIn(StageMinAspect, StageMaxAspect), StageFrameAspect)
@@ -191,8 +180,6 @@ class PlayerState(private val scope: CoroutineScope) {
     /** Polled only while a live stream's chat sheet is open. */
     val liveChat = LiveChatState(scope)
 
-
-
     var accountState by mutableStateOf<VideoAccountState?>(null)
         private set
     private var originalLike = LikeStatus.None
@@ -207,9 +194,9 @@ class PlayerState(private val scope: CoroutineScope) {
     var captionText by mutableStateOf<String?>(null)
         private set
 
-    private var likeOverrides by mutableStateOf<Map<String, LikeStatus>>(emptyMap())
-    private var likeDeltas by mutableStateOf<Map<String, Long>>(emptyMap())
-    private var dislikeDeltas by mutableStateOf<Map<String, Long>>(emptyMap())
+    private var likeOverrides by mutableStateOf>(emptyMap())
+    private var likeDeltas by mutableStateOf>(emptyMap())
+    private var dislikeDeltas by mutableStateOf>(emptyMap())
 
     val currentLike: LikeStatus
         get() = current?.id?.let { likeOverrides[it] } ?: accountState?.like ?: LikeStatus.None
@@ -219,10 +206,6 @@ class PlayerState(private val scope: CoroutineScope) {
     private var loadJob: Job? = null
 
     private var pendingStart: VideoItem? = null
-
-
-
-
 
     private val known = HashMap<String, VideoItem>()
 
@@ -237,7 +220,11 @@ class PlayerState(private val scope: CoroutineScope) {
         AudioOnly.set(false)
         runCatching { applyVideoTrack() }
         if (expand) expanded = true
-        if (current?.id == item.id && error == null) return
+        if (current?.id == item.id && error == null) {
+            seekTo(0L)
+            controller?.play()
+            return
+        }
         known[item.id] = item
         show(item, startPlayback = true)
     }
@@ -246,17 +233,17 @@ class PlayerState(private val scope: CoroutineScope) {
         openMusicQueue(listOf(item), 0, expand)
     }
 
-    
-
-
-
     fun openMusicQueue(items: List<VideoItem>, index: Int, expand: Boolean = true) {
         val item = items.getOrNull(index) ?: return
         isMusicMode = true
         applyVideoTrack()
         musicQueue = items.drop(index + 1).filter { it.id != item.id }
         if (expand) expanded = true
-        if (current?.id == item.id && error == null) return
+        if (current?.id == item.id && error == null) {
+            seekTo(0L)
+            controller?.play()
+            return
+        }
         known[item.id] = item
         show(item, startPlayback = true)
     }
@@ -270,15 +257,9 @@ class PlayerState(private val scope: CoroutineScope) {
         continueIfEnded(player)
     }
 
-    
-
-
-
-
     private var openedAt = 0L
 
-    
-        private fun show(item: VideoItem, startPlayback: Boolean) {
+    private fun show(item: VideoItem, startPlayback: Boolean) {
         endHoldSpeed()
         loadJob?.cancel()
         if (startPlayback) {
@@ -422,7 +403,8 @@ class PlayerState(private val scope: CoroutineScope) {
 
     private fun startPlayback(item: VideoItem) {
         val player = controller ?: run { pendingStart = item; return }
-        replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
+        replaceCurrent(player, item, positionMs = 0L)
+        player.seekTo(0L)
         player.play()
         if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage)
         refreshTracks()
@@ -438,8 +420,6 @@ class PlayerState(private val scope: CoroutineScope) {
         }
         player.prepare()
     }
-    
-
 
     fun playNext(item: VideoItem) {
         val player = controller ?: return
@@ -449,7 +429,6 @@ class PlayerState(private val scope: CoroutineScope) {
         actionMessage = "Playing next"
         continueIfEnded(player)
     }
-
 
     private fun continueIfEnded(player: MediaController) {
         if (player.playbackState == Player.STATE_ENDED && player.currentMediaItemIndex + 1 < player.mediaItemCount) {
@@ -466,7 +445,6 @@ class PlayerState(private val scope: CoroutineScope) {
         actionMessage = "Added to queue"
         continueIfEnded(player)
     }
-
 
     fun playFromQueue(index: Int) {
         val player = controller ?: return
@@ -540,7 +518,6 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
-
     private var swapping = false
 
     private fun onPlayerMovedTo(media: MediaItem) {
@@ -551,10 +528,8 @@ class PlayerState(private val scope: CoroutineScope) {
         if (media.mediaId != current?.id) show(itemFor(media), startPlayback = false)
     }
 
-
     val segments: List<SponsorBlock.Segment>
         get() = current?.id?.let { SponsorBlock.forUi[it] }.orEmpty()
-
 
     val askSegment: SponsorBlock.Segment?
         get() = if (!SponsorBlock.enabled) null else segments.firstOrNull {
@@ -568,7 +543,6 @@ class PlayerState(private val scope: CoroutineScope) {
         SponsorBlock.lastSkip = null
     }
 
-
     fun refreshAccountState() {
         val item = current ?: return
         accountState = null
@@ -580,7 +554,6 @@ class PlayerState(private val scope: CoroutineScope) {
                 .onFailure { Log.w(TAG, "account state for ${item.id}", it) }
         }
     }
-
 
     val displayLikes: Long
         get() {
@@ -667,7 +640,6 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
-
     fun saveToWatchLater(video: VideoItem) {
         scope.launch {
             runCatching { InnerTube.setInWatchLater(video.id, true) }
@@ -678,11 +650,6 @@ class PlayerState(private val scope: CoroutineScope) {
                 .onFailure { actionMessage = "Couldn't save to Watch later."; Log.w(TAG, "watch later ${video.id}", it) }
         }
     }
-
-    
-
-
-
     fun setQuality(height: Int?, preferHdr: Boolean = QualityPreference.hdr) {
         QualityPreference.set(height, preferHdr)
         val player = controller ?: return
@@ -815,7 +782,6 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
-
     fun retry() = current?.let { item -> StreamCache.invalidate(item.id); current = null; open(item) }
 
     fun togglePlay() {
@@ -826,7 +792,6 @@ class PlayerState(private val scope: CoroutineScope) {
             player.play()
         }
     }
-
 
     fun seekBy(deltaMs: Long): Long {
         val player = controller ?: return 0L
@@ -851,7 +816,6 @@ class PlayerState(private val scope: CoroutineScope) {
         scrubDragging = true
     }
 
-
     fun endScrubDragging(seekMs: Long? = null) {
         if (!scrubDragging) return
         val player = controller
@@ -862,7 +826,6 @@ class PlayerState(private val scope: CoroutineScope) {
         if (seekMs != null) seekTo(seekMs)
         if (resume) player?.play()
     }
-
 
     fun beginHoldSpeed(): Boolean {
         val player = controller ?: return false
@@ -881,18 +844,12 @@ class PlayerState(private val scope: CoroutineScope) {
         previewSpeed(restore)
     }
 
-
     fun previewSpeed(value: Float) {
         val player = controller ?: return
         val s = PlaybackSpeed.snap(value)
         if (player.playbackParameters.speed != s) player.setPlaybackSpeed(s)
         speed = s
     }
-
-    
-
-
-
 
     fun commitSpeed(value: Float) {
         previewSpeed(value)
@@ -904,16 +861,10 @@ class PlayerState(private val scope: CoroutineScope) {
 
     fun toggleRememberSpeed() = PlaybackSpeed.setRemember(!PlaybackSpeed.remember, speed)
 
-
     fun setAudioOnly(on: Boolean) {
         AudioOnly.set(on)
         applyVideoTrack()
     }
-
-    
-
-
-
 
     fun setBackground(background: Boolean) {
         if (wantBackground == background) return
@@ -922,14 +873,7 @@ class PlayerState(private val scope: CoroutineScope) {
         applyVideoTrack()
     }
 
-    
-
-
-
-
-
     private var wantBackground = false
-
 
     private fun applyVideoTrack() {
         runCatching {
@@ -960,11 +904,6 @@ class PlayerState(private val scope: CoroutineScope) {
         error = null
         loading = false
     }
-
-    
-
-
-
 
     internal fun onConnected() {
         syncFromPlayer()
@@ -1087,7 +1026,6 @@ class PlayerState(private val scope: CoroutineScope) {
         val w = (videoSize.width * videoSize.pixelWidthHeightRatio).roundToInt()
         describeFormat(w, videoSize.height)
     }
-
 
     private fun describeFormat(width: Int, height: Int) {
         val tier = qualityTier(width, height)
