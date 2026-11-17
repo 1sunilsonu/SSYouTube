@@ -65,6 +65,30 @@ object MiniPlayerSettings {
     }
 }
 
+object VideoQualitySettings {
+    private const val PREFS_NAME = "ss_quality_prefs"
+    private const val KEY_HEIGHT = "locked_video_height"
+    const val DEFAULT_HEIGHT = 360
+
+    val qualityOptions = listOf(144, 240, 360, 480, 720, 1080)
+
+    var preferredHeight by mutableIntStateOf(loadSavedHeight())
+        private set
+
+    private fun prefs(): SharedPreferences? = runCatching {
+        YTXTubeApplication.appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }.getOrNull()
+
+    private fun loadSavedHeight(): Int = prefs()?.getInt(KEY_HEIGHT, DEFAULT_HEIGHT) ?: DEFAULT_HEIGHT
+
+    val displayLabel: String
+        get() = if (preferredHeight <= 0) "Auto" else "${preferredHeight}p"
+
+    fun setHeight(height: Int) {
+        preferredHeight = height
+        prefs()?.edit()?.putInt(KEY_HEIGHT, height)?.apply()
+    }
+}
 object RefreshRateSettings {
     private const val PREFS_NAME = "ss_display_prefs"
     private const val KEY_HZ = "target_refresh_rate_hz"
