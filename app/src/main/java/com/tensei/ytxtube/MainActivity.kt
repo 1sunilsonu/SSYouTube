@@ -11,7 +11,9 @@ import androidx.compose.ui.text.style.TextAlign
 import kotlinx.coroutines.delay
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
@@ -70,6 +72,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.layout.offset
@@ -133,9 +136,40 @@ import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
 
+enum class RefreshRateMode(val hz: Int, val label: String, val subtitle: String) {
+    AUTO(0, "Auto (Max Supported)", "Automatically uses your screen's highest refresh rate (60/90/120Hz)"),
+    HZ_60(60, "60 Hz", "Standard smooth display & battery saver"),
+    HZ_90(90, "90 Hz", "High smoothness (90Hz displays)"),
+    HZ_120(120, "120 Hz", "Ultra-smooth 120Hz display"),
+}
+
+object RefreshRateSettings {
+    private const val PREFS_NAME = "display_refresh_prefs"
+    private const val KEY_MODE = "refresh_rate_mode"
+    private var prefs: SharedPreferences? = null
+
+    var mode by mutableStateOf(RefreshRateMode.AUTO)
+        private set
+
+    fun init(context: Context) {
+        if (prefs == null) {
+            prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+        val saved = prefs?.getString(KEY_MODE, null)
+        mode = RefreshRateMode.entries.firstOrNull { it.name == saved } ?: RefreshRateMode.AUTO
+    }
+
+    fun set(context: Context, newMode: RefreshRateMode) {
+        init(context)
+        mode = newMode
+        prefs?.edit()?.putString(KEY_MODE, newMode.name)?.apply()
+    }
+}
+
 private object ColdStartSplashState {
     var hasPlayed = false
 }
+
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
     internal var playerHolder: PlayerState? = null
@@ -145,8 +179,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        RefreshRateSettings.init(this)
         enableEdgeToEdge()
-        setHighestRefreshRate()
+        applyRefreshRate()
         enableHdrOutput()
 
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -154,7 +189,7 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-                val shouldPlayWelcome = savedInstanceState == null && !ColdStartSplashState.hasPlayed
+        val shouldPlayWelcome = savedInstanceState == null && !ColdStartSplashState.hasPlayed
         if (shouldPlayWelcome) {
             ColdStartSplashState.hasPlayed = true
         }
@@ -172,7 +207,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        setHighestRefreshRate()
+        applyRefreshRate()
     }
 
     override fun onPause() {
@@ -190,7 +225,6 @@ class MainActivity : ComponentActivity() {
         if (!PipSettings.enabled) return
         val sp = shortsPlayerHolder
         if (sp != null && sp.isPlaying) {
-            // Shorts should not enter PiP or play in background
             sp.pause()
             return
         }
@@ -208,20 +242,28 @@ class MainActivity : ComponentActivity() {
         intentHandler?.invoke(intent)
     }
 
-    private fun setHighestRefreshRate() {
+    internal fun applyRefreshRate() {
         runCatching {
+            val targetMode = RefreshRateSettings.mode
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val disp = display ?: return
                 val currentMode = disp.mode
                 val modes = disp.supportedModes
-                val bestMode = modes
-                    .filter { it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight }
-                    .maxByOrNull { it.refreshRate }
-                    ?: modes.maxByOrNull { it.refreshRate }
-                if (bestMode != null) {
+                val sameResModes = modes.filter {
+                    it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight
+                }.ifEmpty { modes.toList() }
+
+                val chosenMode = if (targetMode == RefreshRateMode.AUTO) {
+                    sameResModes.maxByOrNull { it.refreshRate }
+                } else {
+                    val targetHz = targetMode.hz.toFloat()
+                    sameResModes.minByOrNull { abs(it.refreshRate - targetHz) }
+                }
+
+                if (chosenMode != null) {
                     val lp = window.attributes
-                    lp.preferredDisplayModeId = bestMode.modeId
-                    lp.preferredRefreshRate = bestMode.refreshRate
+                    lp.preferredDisplayModeId = chosenMode.modeId
+                    lp.preferredRefreshRate = chosenMode.refreshRate
                     window.attributes = lp
                 }
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -229,23 +271,26 @@ class MainActivity : ComponentActivity() {
                 val disp = windowManager.defaultDisplay ?: return
                 val currentMode = disp.mode
                 val modes = disp.supportedModes
-                val bestMode = modes
-                    .filter { it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight }
-                    .maxByOrNull { it.refreshRate }
-                    ?: modes.maxByOrNull { it.refreshRate }
-                if (bestMode != null) {
+                val sameResModes = modes.filter {
+                    it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight
+                }.ifEmpty { modes.toList() }
+
+                val chosenMode = if (targetMode == RefreshRateMode.AUTO) {
+                    sameResModes.maxByOrNull { it.refreshRate }
+                } else {
+                    val targetHz = targetMode.hz.toFloat()
+                    sameResModes.minByOrNull { abs(it.refreshRate - targetHz) }
+                }
+
+                if (chosenMode != null) {
                     val lp = window.attributes
-                    lp.preferredDisplayModeId = bestMode.modeId
+                    lp.preferredDisplayModeId = chosenMode.modeId
                     window.attributes = lp
                 }
             }
         }
     }
 
-    /**
-     * HDR video only reaches the panel when the window opts into the HDR color mode.
-     * Without this the compositor tone-maps 10-bit BT.2020 frames back to SDR.
-     */
     private fun enableHdrOutput() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
@@ -275,13 +320,11 @@ enum class Tab(val defaultLabel: String, val icon: ImageVector, val selectedIcon
         }
 }
 
-
 private val NavHeight = 64.dp
 private val NavWidth = 368.dp
 private val NavLift = 10.dp
 private val MiniWidth = 368.dp
 private val MiniGap = 8.dp
-
 @Composable
 fun YtxTubeApp() {
     val c = MaterialTheme.colorScheme
@@ -298,7 +341,6 @@ fun YtxTubeApp() {
     var openSearch by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var isShortsCommentsOpen by remember { mutableStateOf(false) }
-
 
     LaunchedEffect(tab) { if (tab == Tab.Shorts && player.isPlaying) player.togglePlay() }
     LaunchedEffect(openSearch) { if (openSearch) search.reset() }
@@ -330,21 +372,15 @@ fun YtxTubeApp() {
         miniOffsetY = 0f
     }
 
-
     val pageBackdrop = rememberLayerBackdrop()
     val playerBackdrop = rememberLayerBackdrop()
     val glassBackdrop = rememberCombinedBackdrop(pageBackdrop, playerBackdrop)
-
-
 
     val rootView = LocalView.current
     DisposableEffect(player.isPlaying) {
         rootView.keepScreenOn = player.isPlaying
         onDispose { rootView.keepScreenOn = false }
     }
-
-
-
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -354,7 +390,6 @@ fun YtxTubeApp() {
             keyboard?.hide()
         }
     }
-
 
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -389,11 +424,14 @@ fun YtxTubeApp() {
         bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 16.dp,
     )
 
-
     val activity = LocalContext.current as Activity
     val mainActivity = activity as? MainActivity
     val orientation = rememberOrientationController(activity)
     val playerOpen = player.current != null && player.expanded
+
+    LaunchedEffect(RefreshRateSettings.mode) {
+        mainActivity?.applyRefreshRate()
+    }
 
     orientation.Bind(playerOpen && !AudioOnly.enabled && !player.isMusicMode)
     val pip = remember(activity) { PipController(activity as ComponentActivity) }
@@ -476,7 +514,6 @@ fun YtxTubeApp() {
     fun toggleFullscreen() {
         when {
             showFullscreen -> exitFullscreen()
-            // A vertical video fills the portrait screen instead of being letterboxed in landscape.
             player.portraitVideo -> player.portraitFullscreen = true
             isTabletOrTv -> player.fullscreen = true
             else -> orientation.enterFullscreen()
@@ -526,18 +563,14 @@ fun YtxTubeApp() {
 
     val density = LocalDensity.current
 
-
-
     LaunchedEffect(player.expanded, player.current?.id) {
         if (player.current == null) morph.progress.snapTo(0f) else morph.animateTo(player.expanded, reduced)
     }
     val showPlayer by remember {
-
         derivedStateOf { player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
-
         val stageAspect = player.stageAspect
         val stageTopPx = with(density) {
             WindowInsets.statusBars.asPaddingValues().calculateTopPadding().toPx()
@@ -589,8 +622,6 @@ fun YtxTubeApp() {
         }
         SideEffect { morph.geometry = geometry }
 
-
-
         val sharedSurface = remember(player) {
             androidx.compose.runtime.movableContentOf { m: Modifier -> VideoSurface(player.controller, m) }
         }
@@ -599,462 +630,448 @@ fun YtxTubeApp() {
             LocalPictureInPicture provides pip,
             LocalVideoMenu provides { optionsFor = it },
             LocalChannelOpener provides { url ->
-
                 player.expanded = false
                 if (channelState?.url != url) channelState = ChannelState(url, scope)
                 openChannel = url
             },
         ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .layerBackdrop(pageBackdrop)
-                .background(c.surface)
-                .graphicsLayer {
-                    rotationY = appFlipRotation.value
-                    cameraDistance = 16f
-                }
-        ) {
-        AnimatedContent(
-            targetState = tab,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .widthIn(max = if (TvMode.isTv) 1280.dp else Dp.Unspecified)
-                .fillMaxHeight(),
-            transitionSpec = {
-                if (reduced) fadeIn(snap()) togetherWith fadeOut(snap())
-                else (fadeIn(tween(Motion.PageEnterMs, easing = Motion.Emphasized)) +
-                    slideInVertically(tween(Motion.PageRiseMs, easing = Motion.Emphasized)) { (it / 35).coerceIn(8, 24) }) togetherWith
-                    fadeOut(tween(Motion.PageExitMs))
-            },
-            label = "tabs",
-        ) { t ->
-            when (t) {
-                Tab.Home -> HomeScreen(
-                    lib, contentPadding, onOpen = player::open, onSearch = { openSearch = true },
-                    onSignIn = { signingIn = true }, onAccount = { openSettings = true },
-                    scrollToTop = scrollToTop[Tab.Home] ?: 0,
-                )
-                Tab.Music -> MusicScreen(
-                    lib, contentPadding, onOpen = player::openMusic, onSearch = { openSearch = true },
-                    onAccount = { openSettings = true },
-                    onPlayNext = player::playNextMusic,
-                    onOpenQueue = { items, index -> player.openMusicQueue(items, index) },
-                    scrollToTop = scrollToTop[Tab.Music] ?: 0,
-                )
-                Tab.Shorts -> ShortsScreen(
-                    onBack = { tab = Tab.Home },
-                    onSignIn = { signingIn = true },
-                    onSearch = { openSearch = true },
-                    bottomInset = navTop + 12.dp,
-                    active = openChannel == null && !openSearch && !openSettings,
-                    onOpenChannel = { url ->
-                        player.expanded = false
-                        if (channelState?.url != url) channelState = ChannelState(url, scope)
-                        openChannel = url
-                    },
-                    onCommentsOpenChange = { isShortsCommentsOpen = it },
-                )
-                Tab.Library -> LibraryScreen(
-                    lib, contentPadding, onOpen = player::open, onOpenPlaylist = { ref -> if (ref.id == "DL") tab = Tab.Downloads else openPlaylist = ref },
-                    onOpenChannel = { url ->
-                        player.expanded = false
-                        if (channelState?.url != url) channelState = ChannelState(url, scope)
-                        openChannel = url
-                    },
-                    onOpenAllSubscriptions = { openAllSubscriptions = true },
-                    onSearch = { openSearch = true },
-                    onSignIn = { signingIn = true }, onAccount = { openSettings = true },
-                    scrollToTop = scrollToTop[Tab.Library] ?: 0,
-                )
-                Tab.Downloads -> DownloadsScreen(
-                    contentPadding,
-                    onOpen = player::open,
-                    onOpenMusic = player::openMusic,
-                    onBrowse = { tab = Tab.Home },
-                    onBrowseMusic = { tab = Tab.Music },
-                    onSearch = { openSearch = true },
-                    onAccount = { openSettings = true },
-                    scrollToTop = scrollToTop[Tab.Downloads] ?: 0,
-                )
-            }
-        }
-
-        AnimatedVisibility(
-            visible = openSearch,
-            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
-            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
-        ) {
-            SearchScreen(
-                search,
-                contentPadding,
-                onBack = { openSearch = false },
-                onOpen = player::open,
-            )
-        }
-
-
-        AnimatedVisibility(
-            visible = openPlaylist != null,
-            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
-            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
-        ) {
-            val pl = openPlaylist
-            val feed = playlistFeed
-            if (pl != null && feed != null) {
-                PlaylistScreen(
-                    pl, feed, contentPadding,
-                    onBack = { openPlaylist = null },
-                    onOpen = { video ->
-                        if (pl.id == "MDL") player.openMusic(video)
-                        else player.open(video)
-                    },
-                    channelAvatarSeed = lib.channels.associate { it.id to it.avatar },
-                )
-            }
-        }
-
-
-        AnimatedVisibility(
-            visible = openAllSubscriptions,
-            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
-            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
-        ) {
-            AllSubscriptionsScreen(
-                channels = lib.channels,
-                contentPadding = contentPadding,
-                onBack = { openAllSubscriptions = false },
-            )
-        }
-
-
-        AnimatedVisibility(
-            visible = openChannel != null,
-            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
-            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
-        ) {
-            channelState?.let { ch ->
-                ChannelScreen(
-                    ch,
-                    contentPadding,
-                    onBack = { openChannel = null },
-                    onOpen = player::open,
-                    onOpenShort = { video ->
-                        player.expanded = false
-                        shortsEntry = video
-                    },
-                    onMessage = { player.actionMessage = it },
-                )
-            }
-        }
-
-
-        AnimatedVisibility(
-            visible = openSettings,
-            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
-            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
-        ) {
-            SettingsScreen(
-                onBack = { openSettings = false },
-                onSignIn = { signingIn = true },
-                onSignedOut = { lib.reset(); lib.home.refresh(); player.refreshAccountState() },
-                onAccountSwitched = {
-                    scope.launch {
-                        appFlipRotation.animateTo(90f, tween(240, easing = androidx.compose.animation.core.FastOutLinearInEasing))
-                        lib.reset()
-                        lib.home.refresh()
-                        player.refreshAccountState()
-                        appFlipRotation.snapTo(-90f)
-                        appFlipRotation.animateTo(0f, tween(300, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(pageBackdrop)
+                    .background(c.surface)
+                    .graphicsLayer {
+                        rotationY = appFlipRotation.value
+                        cameraDistance = 16f
                     }
-                },
-                contentPadding = PaddingValues(bottom = navBottom),
-                onCheckUpdate = { updateState.check(manual = true) },
-            )
-        }
-
-
-        BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
-
-        }
-
-        if (hasMini && !openSettings && tab != Tab.Shorts && shortsEntry == null) {
-            val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
-            LaunchedEffect(player.current?.id) { dismiss.snapTo(0f) }
-            val dismissDistance = with(density) { 56.dp.toPx() }
-
-            if (player.isMusicMode || MiniPlayerSettings.useLiquidMiniPlayer) {
-                LiquidMiniPlayer(
-                    player,
-                    onExpand = { player.expanded = true },
-                    showVideo = !showPlayer && !showFullscreen,
-                    backdrop = pageBackdrop,
+            ) {
+                AnimatedContent(
+                    targetState = tab,
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(start = 16.dp, end = 16.dp, bottom = navTop + MiniGap)
-                        .widthIn(max = MiniWidth)
-                        .graphicsLayer {
-                            translationY = dismiss.value
-                            alpha = (if (showPlayer) 0f else 1f) * (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f))
-                        }
-                        .draggable(
-                            state = rememberDraggableState { delta ->
-                                if (morph.progress.value <= 0f && (delta > 0f || dismiss.value > 0f)) {
-                                    scope.launch { dismiss.snapTo((dismiss.value + delta).coerceAtLeast(0f)) }
-                                } else {
-                                    morph.dragBy(delta)
-                                }
+                        .align(Alignment.TopCenter)
+                        .widthIn(max = if (TvMode.isTv) 1280.dp else Dp.Unspecified)
+                        .fillMaxHeight(),
+                    transitionSpec = {
+                        if (reduced) fadeIn(snap()) togetherWith fadeOut(snap())
+                        else (fadeIn(tween(Motion.PageEnterMs, easing = Motion.Emphasized)) +
+                            slideInVertically(tween(Motion.PageRiseMs, easing = Motion.Emphasized)) { (it / 35).coerceIn(8, 24) }) togetherWith
+                            fadeOut(tween(Motion.PageExitMs))
+                    },
+                    label = "tabs",
+                ) { t ->
+                    when (t) {
+                        Tab.Home -> HomeScreen(
+                            lib, contentPadding, onOpen = player::open, onSearch = { openSearch = true },
+                            onSignIn = { signingIn = true }, onAccount = { openSettings = true },
+                            scrollToTop = scrollToTop[Tab.Home] ?: 0,
+                        )
+                        Tab.Music -> MusicScreen(
+                            lib, contentPadding, onOpen = player::openMusic, onSearch = { openSearch = true },
+                            onAccount = { openSettings = true },
+                            onPlayNext = player::playNextMusic,
+                            onOpenQueue = { items, index -> player.openMusicQueue(items, index) },
+                            scrollToTop = scrollToTop[Tab.Music] ?: 0,
+                        )
+                        Tab.Shorts -> ShortsScreen(
+                            onBack = { tab = Tab.Home },
+                            onSignIn = { signingIn = true },
+                            onSearch = { openSearch = true },
+                            bottomInset = navTop + 12.dp,
+                            active = openChannel == null && !openSearch && !openSettings,
+                            onOpenChannel = { url ->
+                                player.expanded = false
+                                if (channelState?.url != url) channelState = ChannelState(url, scope)
+                                openChannel = url
                             },
-                            orientation = Orientation.Vertical,
-                            onDragStopped = { velocity ->
-                                if (dismiss.value > 0f) {
-                                    if (dismiss.value > dismissDistance || velocity > 800f) {
-                                        scope.launch {
-                                            if (!reduced) dismiss.animateTo(dismissDistance * 2.2f, tween(200, easing = Motion.Emphasized))
-                                            player.close()
+                            onCommentsOpenChange = { isShortsCommentsOpen = it },
+                        )
+                        Tab.Library -> LibraryScreen(
+                            lib, contentPadding, onOpen = player::open, onOpenPlaylist = { ref -> if (ref.id == "DL") tab = Tab.Downloads else openPlaylist = ref },
+                            onOpenChannel = { url ->
+                                player.expanded = false
+                                if (channelState?.url != url) channelState = ChannelState(url, scope)
+                                openChannel = url
+                            },
+                            onOpenAllSubscriptions = { openAllSubscriptions = true },
+                            onSearch = { openSearch = true },
+                            onSignIn = { signingIn = true }, onAccount = { openSettings = true },
+                            scrollToTop = scrollToTop[Tab.Library] ?: 0,
+                        )
+                        Tab.Downloads -> DownloadsScreen(
+                            contentPadding,
+                            onOpen = player::open,
+                            onOpenMusic = player::openMusic,
+                            onBrowse = { tab = Tab.Home },
+                            onBrowseMusic = { tab = Tab.Music },
+                            onSearch = { openSearch = true },
+                            onAccount = { openSettings = true },
+                            scrollToTop = scrollToTop[Tab.Downloads] ?: 0,
+                        )
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = openSearch,
+                    enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+                    exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+                ) {
+                    SearchScreen(
+                        search,
+                        contentPadding,
+                        onBack = { openSearch = false },
+                        onOpen = player::open,
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = openPlaylist != null,
+                    enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+                    exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+                ) {
+                    val pl = openPlaylist
+                    val feed = playlistFeed
+                    if (pl != null && feed != null) {
+                        PlaylistScreen(
+                            pl, feed, contentPadding,
+                            onBack = { openPlaylist = null },
+                            onOpen = { video ->
+                                if (pl.id == "MDL") player.openMusic(video)
+                                else player.open(video)
+                            },
+                            channelAvatarSeed = lib.channels.associate { it.id to it.avatar },
+                        )
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = openAllSubscriptions,
+                    enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+                    exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+                ) {
+                    AllSubscriptionsScreen(
+                        channels = lib.channels,
+                        contentPadding = contentPadding,
+                        onBack = { openAllSubscriptions = false },
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = openChannel != null,
+                    enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+                    exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+                ) {
+                    channelState?.let { ch ->
+                        ChannelScreen(
+                            ch,
+                            contentPadding,
+                            onBack = { openChannel = null },
+                            onOpen = player::open,
+                            onOpenShort = { video ->
+                                player.expanded = false
+                                shortsEntry = video
+                            },
+                            onMessage = { player.actionMessage = it },
+                        )
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = openSettings,
+                    enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+                    exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+                ) {
+                    SettingsScreen(
+                        onBack = { openSettings = false },
+                        onSignIn = { signingIn = true },
+                        onSignedOut = { lib.reset(); lib.home.refresh(); player.refreshAccountState() },
+                        onAccountSwitched = {
+                            scope.launch {
+                                appFlipRotation.animateTo(90f, tween(240, easing = androidx.compose.animation.core.FastOutLinearInEasing))
+                                lib.reset()
+                                lib.home.refresh()
+                                player.refreshAccountState()
+                                appFlipRotation.snapTo(-90f)
+                                appFlipRotation.animateTo(0f, tween(300, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+                            }
+                        },
+                        contentPadding = PaddingValues(bottom = navBottom),
+                        onCheckUpdate = { updateState.check(manual = true) },
+                    )
+                }
+
+                BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
+            }
+
+            if (hasMini && !openSettings && tab != Tab.Shorts && shortsEntry == null) {
+                val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
+                LaunchedEffect(player.current?.id) { dismiss.snapTo(0f) }
+                val dismissDistance = with(density) { 56.dp.toPx() }
+
+                if (player.isMusicMode || MiniPlayerSettings.useLiquidMiniPlayer) {
+                    LiquidMiniPlayer(
+                        player,
+                        onExpand = { player.expanded = true },
+                        showVideo = !showPlayer && !showFullscreen,
+                        backdrop = pageBackdrop,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(start = 16.dp, end = 16.dp, bottom = navTop + MiniGap)
+                            .widthIn(max = MiniWidth)
+                            .graphicsLayer {
+                                translationY = dismiss.value
+                                alpha = (if (showPlayer) 0f else 1f) * (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f))
+                            }
+                            .draggable(
+                                state = rememberDraggableState { delta ->
+                                    if (morph.progress.value <= 0f && (delta > 0f || dismiss.value > 0f)) {
+                                        scope.launch { dismiss.snapTo((dismiss.value + delta).coerceAtLeast(0f)) }
+                                    } else {
+                                        morph.dragBy(delta)
+                                    }
+                                },
+                                orientation = Orientation.Vertical,
+                                onDragStopped = { velocity ->
+                                    if (dismiss.value > 0f) {
+                                        if (dismiss.value > dismissDistance || velocity > 800f) {
+                                            scope.launch {
+                                                if (!reduced) dismiss.animateTo(dismissDistance * 2.2f, tween(200, easing = Motion.Emphasized))
+                                                player.close()
+                                            }
+                                        } else {
+                                            scope.launch { dismiss.snapTo(0f) }
                                         }
                                     } else {
-                                        scope.launch { dismiss.snapTo(0f) }
+                                        morph.settle(velocity, reduced)
                                     }
-                                } else {
-                                    morph.settle(velocity, reduced)
+                                },
+                            ),
+                    )
+                } else {
+                    val cardWidthPx = with(density) { 200.dp.toPx() }
+                    val screenW = constraints.maxWidth.toFloat()
+                    val screenH = constraints.maxHeight.toFloat()
+                    MiniPlayer(
+                        state = player,
+                        onExpand = { player.expanded = true },
+                        showVideo = !showPlayer && !showFullscreen,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset { IntOffset(miniOffsetX.roundToInt(), miniOffsetY.roundToInt()) }
+                            .padding(start = 16.dp, end = 16.dp, bottom = navTop + MiniGap)
+                            .widthIn(max = 200.dp)
+                            .pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    val minX = -(screenW - cardWidthPx - 32.dp.toPx())
+                                    val maxX = 0f
+                                    miniOffsetX = (miniOffsetX + dragAmount.x).coerceIn(minX, maxX)
+                                    val minY = -(screenH - 240.dp.toPx())
+                                    val maxY = 80.dp.toPx()
+                                    miniOffsetY = (miniOffsetY + dragAmount.y).coerceIn(minY, maxY)
                                 }
-                            },
-                        ),
-                )
-            } else {
-                val cardWidthPx = with(density) { 200.dp.toPx() }
-                val screenW = constraints.maxWidth.toFloat()
-                val screenH = constraints.maxHeight.toFloat()
-                MiniPlayer(
-                    state = player,
-                    onExpand = { player.expanded = true },
-                    showVideo = !showPlayer && !showFullscreen,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset { IntOffset(miniOffsetX.roundToInt(), miniOffsetY.roundToInt()) }
-                        .padding(start = 16.dp, end = 16.dp, bottom = navTop + MiniGap)
-                        .widthIn(max = 200.dp)
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                val minX = -(screenW - cardWidthPx - 32.dp.toPx())
-                                val maxX = 0f
-                                miniOffsetX = (miniOffsetX + dragAmount.x).coerceIn(minX, maxX)
-                                val minY = -(screenH - 240.dp.toPx())
-                                val maxY = 80.dp.toPx()
-                                miniOffsetY = (miniOffsetY + dragAmount.y).coerceIn(minY, maxY)
                             }
-                        }
-                        .graphicsLayer {
-                            translationY = dismiss.value
-                            alpha = (if (showPlayer) 0f else 1f) * (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f))
-                        },
-                )
-            }
-        }
-
-        val selectTab: (Tab) -> Unit = { selected ->
-            when {
-
-                selected == tab && openSearch -> openSearch = false
-                selected == tab && openChannel != null -> openChannel = null
-                selected == tab && openPlaylist != null -> openPlaylist = null
-                selected == tab && openAllSubscriptions -> openAllSubscriptions = false
-                selected == tab -> scrollToTop[selected] = (scrollToTop[selected] ?: 0) + 1
-                else -> {
-                    openPlaylist = null
-                    openChannel = null
-                    openAllSubscriptions = false
-                    openSearch = false
-                    tab = selected
+                            .graphicsLayer {
+                                translationY = dismiss.value
+                                alpha = (if (showPlayer) 0f else 1f) * (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f))
+                            },
+                    )
                 }
             }
-        }
 
-
-        val showBottomBar = !openSettings && shortsEntry == null && !pip.active && (tab != Tab.Shorts || !isShortsCommentsOpen)
-        AnimatedVisibility(
-            visible = showBottomBar,
-            enter = slideInVertically(tween(260, easing = Motion.Emphasized)) { it } + fadeIn(tween(160)),
-            exit = slideOutVertically(tween(200, easing = Motion.Emphasized)) { it } + fadeOut(tween(140)),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(start = 16.dp, end = 16.dp, bottom = stackBottom + NavLift)
-                .widthIn(max = NavWidth)
-                .fillMaxWidth(),
-        ) {
-            LiquidBottomBar(
-                selectedTabIndex = { Tab.entries.indexOf(tab) },
-                onTabSelected = { index -> Tab.entries.getOrNull(index)?.let(selectTab) },
-                backdrop = pageBackdrop,
-                isDarkSurface = tab == Tab.Shorts,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Tab.entries.forEach { t ->
-                    LiquidNavTab(t, t == tab, isDarkSurface = tab == Tab.Shorts) { selectTab(t) }
-                }
-            }
-        }
-
-
-
-        shortsEntry?.let { entry ->
-            Box(Modifier.fillMaxSize().background(Color.Black)) {
-                ShortsScreen(
-                    onBack = { shortsEntry = null },
-                    onSignIn = { signingIn = true },
-                    onSearch = { openSearch = true },
-                    bottomInset = 12.dp,
-                    startItem = entry,
-                    active = openChannel == null && !openSearch,
-                    onOpenChannel = { url ->
-                        shortsEntry = null
-                        player.expanded = false
-                        if (channelState?.url != url) channelState = ChannelState(url, scope)
-                        openChannel = url
-                    },
-                )
-            }
-        }
-
-        if (showFullscreen) {
-            Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
-                FullscreenPlayer(player, onExit = { exitFullscreen() })
-            }
-        } else if (showPlayer) {
-            Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
-                PlayerScreen(
-                    player, morph,
-                    onOpen = player::open,
-                    onCollapse = { player.expanded = false },
-                    onFullscreen = { toggleFullscreen() },
-                    onSignIn = { signingIn = true },
-                )
-            }
-        }
-
-        if (signingIn) {
-            SignInScreen(
-                onDone = {
-                    signingIn = false
-                    lib.reset()
-                    lib.home.refresh()
-                    lib.loadChannels()
-                    player.refreshAccountState()
-                },
-                onCancel = { signingIn = false },
-            )
-        }
-
-        when (player.sheet) {
-            PlayerSheet.Quality -> QualitySheet(player, onDismiss = { player.sheet = null })
-            PlayerSheet.Subtitles -> SubtitlesSheet(player, onDismiss = { player.sheet = null })
-            PlayerSheet.Settings -> Unit
-            PlayerSheet.Comments -> Unit
-            PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
-            PlayerSheet.Speed -> Unit
-            PlayerSheet.Audio -> Unit
-            null -> Unit
-        }
-
-        AnimatedVisibility(
-            visible = player.sheet == PlayerSheet.Settings,
-            enter = fadeIn(tween(180, easing = Motion.Emphasized)),
-            exit = fadeOut(tween(150)),
-        ) {
-            PlayerSettingsSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
-        }
-
-        AnimatedVisibility(
-            visible = player.sheet == PlayerSheet.Speed,
-            enter = fadeIn(tween(180, easing = Motion.Emphasized)),
-            exit = fadeOut(tween(150)),
-        ) {
-            SpeedSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
-        }
-
-        AnimatedVisibility(
-            visible = player.sheet == PlayerSheet.Audio,
-            enter = fadeIn(tween(180, easing = Motion.Emphasized)),
-            exit = fadeOut(tween(150)),
-        ) {
-            AudioTrackSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
-        }
-
-
-
-        player.downloadFor?.let { video ->
-            DownloadQualitySheet(
-                video = video,
-                onDownloadStarted = { msg -> downloadNotice = msg },
-                onDismiss = { player.downloadFor = null },
-            )
-        }
-
-        AnimatedVisibility(
-            visible = downloadNotice != null,
-            enter = slideInVertically(tween(280, easing = Motion.Emphasized)) { it } + fadeIn(),
-            exit = slideOutVertically(tween(200, easing = Motion.Emphasized)) { it } + fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp)
-                .padding(horizontal = 20.dp),
-        ) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = c.surfaceContainerHighest,
-                tonalElevation = 6.dp,
-                shadowElevation = 8.dp,
-                modifier = Modifier.widthIn(max = 420.dp),
-            ) {
-                Row(
-                    modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Rounded.Download,
-                        contentDescription = null,
-                        tint = c.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        downloadNotice.orEmpty(),
-                        color = c.onSurface,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(
-                        onClick = {
-                            tab = Tab.Downloads
-                            downloadNotice = null
-                            if (showPlayer) player.expanded = false
-                        },
-                    ) {
-                        Text("VIEW", fontWeight = FontWeight.Bold, color = c.primary, fontSize = 13.sp)
+            val selectTab: (Tab) -> Unit = { selected ->
+                when {
+                    selected == tab && openSearch -> openSearch = false
+                    selected == tab && openChannel != null -> openChannel = null
+                    selected == tab && openPlaylist != null -> openPlaylist = null
+                    selected == tab && openAllSubscriptions -> openAllSubscriptions = false
+                    selected == tab -> scrollToTop[selected] = (scrollToTop[selected] ?: 0) + 1
+                    else -> {
+                        openPlaylist = null
+                        openChannel = null
+                        openAllSubscriptions = false
+                        openSearch = false
+                        tab = selected
                     }
                 }
             }
-        }
-        optionsFor?.let { video -> VideoOptionsSheet(video, player, onDismiss = { optionsFor = null }) }
 
-        if (!showPlayer) {
-            QueueMessage(player, Modifier.align(Alignment.BottomCenter).padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp))
-        }
-
-
-        if (pip.active) {
-            Box(Modifier.fillMaxSize().background(Color.Black)) {
-                sharedSurface(Modifier.fillMaxSize().aspectFit(player.videoAspect))
+            val showBottomBar = !openSettings && shortsEntry == null && !pip.active && (tab != Tab.Shorts || !isShortsCommentsOpen)
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = slideInVertically(tween(260, easing = Motion.Emphasized)) { it } + fadeIn(tween(160)),
+                exit = slideOutVertically(tween(200, easing = Motion.Emphasized)) { it } + fadeOut(tween(140)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 16.dp, end = 16.dp, bottom = stackBottom + NavLift)
+                    .widthIn(max = NavWidth)
+                    .fillMaxWidth(),
+            ) {
+                LiquidBottomBar(
+                    selectedTabIndex = { Tab.entries.indexOf(tab) },
+                    onTabSelected = { index -> Tab.entries.getOrNull(index)?.let(selectTab) },
+                    backdrop = pageBackdrop,
+                    isDarkSurface = tab == Tab.Shorts,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Tab.entries.forEach { t ->
+                        LiquidNavTab(t, t == tab, isDarkSurface = tab == Tab.Shorts) { selectTab(t) }
+                    }
+                }
             }
-        }
 
-        UpdateOverlay(updateState, pageBackdrop)
+            shortsEntry?.let { entry ->
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    ShortsScreen(
+                        onBack = { shortsEntry = null },
+                        onSignIn = { signingIn = true },
+                        onSearch = { openSearch = true },
+                        bottomInset = 12.dp,
+                        startItem = entry,
+                        active = openChannel == null && !openSearch,
+                        onOpenChannel = { url ->
+                            shortsEntry = null
+                            player.expanded = false
+                            if (channelState?.url != url) channelState = ChannelState(url, scope)
+                            openChannel = url
+                        },
+                    )
+                }
+            }
+
+            if (showFullscreen) {
+                Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
+                    FullscreenPlayer(player, onExit = { exitFullscreen() })
+                }
+            } else if (showPlayer) {
+                Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
+                    PlayerScreen(
+                        player, morph,
+                        onOpen = player::open,
+                        onCollapse = { player.expanded = false },
+                        onFullscreen = { toggleFullscreen() },
+                        onSignIn = { signingIn = true },
+                    )
+                }
+            }
+
+            if (signingIn) {
+                SignInScreen(
+                    onDone = {
+                        signingIn = false
+                        lib.reset()
+                        lib.home.refresh()
+                        lib.loadChannels()
+                        player.refreshAccountState()
+                    },
+                    onCancel = { signingIn = false },
+                )
+            }
+
+            when (player.sheet) {
+                PlayerSheet.Quality -> QualitySheet(player, onDismiss = { player.sheet = null })
+                PlayerSheet.Subtitles -> SubtitlesSheet(player, onDismiss = { player.sheet = null })
+                PlayerSheet.Settings -> Unit
+                PlayerSheet.Comments -> Unit
+                PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
+                PlayerSheet.Speed -> Unit
+                PlayerSheet.Audio -> Unit
+                null -> Unit
+            }
+
+            AnimatedVisibility(
+                visible = player.sheet == PlayerSheet.Settings,
+                enter = fadeIn(tween(180, easing = Motion.Emphasized)),
+                exit = fadeOut(tween(150)),
+            ) {
+                PlayerSettingsSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+            }
+
+            AnimatedVisibility(
+                visible = player.sheet == PlayerSheet.Speed,
+                enter = fadeIn(tween(180, easing = Motion.Emphasized)),
+                exit = fadeOut(tween(150)),
+            ) {
+                SpeedSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+            }
+
+            AnimatedVisibility(
+                visible = player.sheet == PlayerSheet.Audio,
+                enter = fadeIn(tween(180, easing = Motion.Emphasized)),
+                exit = fadeOut(tween(150)),
+            ) {
+                AudioTrackSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+            }
+
+            player.downloadFor?.let { video ->
+                DownloadQualitySheet(
+                    video = video,
+                    onDownloadStarted = { msg -> downloadNotice = msg },
+                    onDismiss = { player.downloadFor = null },
+                )
+            }
+
+            AnimatedVisibility(
+                visible = downloadNotice != null,
+                enter = slideInVertically(tween(280, easing = Motion.Emphasized)) { it } + fadeIn(),
+                exit = slideOutVertically(tween(200, easing = Motion.Emphasized)) { it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp)
+                    .padding(horizontal = 20.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = c.surfaceContainerHighest,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.widthIn(max = 420.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Download,
+                            contentDescription = null,
+                            tint = c.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            downloadNotice.orEmpty(),
+                            color = c.onSurface,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(
+                            onClick = {
+                                tab = Tab.Downloads
+                                downloadNotice = null
+                                if (showPlayer) player.expanded = false
+                            },
+                        ) {
+                            Text("VIEW", fontWeight = FontWeight.Bold, color = c.primary, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+            optionsFor?.let { video -> VideoOptionsSheet(video, player, onDismiss = { optionsFor = null }) }
+
+            if (!showPlayer) {
+                QueueMessage(player, Modifier.align(Alignment.BottomCenter).padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp))
+            }
+
+            if (pip.active) {
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    sharedSurface(Modifier.fillMaxSize().aspectFit(player.videoAspect))
+                }
+            }
+
+            UpdateOverlay(updateState, pageBackdrop)
         }
     }
 }
@@ -1071,11 +1088,6 @@ private fun QueueMessage(player: PlayerState, modifier: Modifier) {
         Text(message, color = c.inverseOnSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
-
-
-
-
-
 
 @Composable
 private fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
@@ -1200,6 +1212,7 @@ internal fun parseYouTubeLink(text: String): YouTubeLinkTarget? {
     }
     return null
 }
+
 @Composable
 private fun SunilSonuLiquidGlassSplash() {
     val context = LocalContext.current
