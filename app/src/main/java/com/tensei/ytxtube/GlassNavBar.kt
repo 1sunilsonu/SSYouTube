@@ -141,9 +141,9 @@ fun LiquidBottomTabs(
     val solidContainer = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
     val containerColor = when {
         !glassSupported -> solidContainer
-        isAmoled -> Color(0xFF0A0A0C).copy(alpha = 0.78f)
-        isLightTheme -> Color(0xFFF6F6F8).copy(alpha = 0.78f)
-        else -> Color(0xFF141416).copy(alpha = 0.74f)
+        isAmoled -> Color(0xFF0A0A0C).copy(alpha = 0.66f)
+        isLightTheme -> Color(0xFFF6F6F8).copy(alpha = 0.68f)
+        else -> Color(0xFF141416).copy(alpha = 0.62f)
     }
 
     BoxWithConstraints(
@@ -252,14 +252,14 @@ fun LiquidBottomTabs(
                             shape = { Capsule() },
                             effects = {
                                 vibrancy()
-                                blur(18f.dp.toPx())
-                                lens(10f.dp.toPx(), 12f.dp.toPx())
+                                blur(14f.dp.toPx())
+                                lens(12f.dp.toPx(), 14f.dp.toPx())
                             },
                             highlight = {
                                 Highlight.Default.copy(alpha = 0.35f)
                             },
                             shadow = {
-                                Shadow(alpha = 0.28f)
+                                Shadow(alpha = 0.30f)
                             },
                             layerBlock = {
                                 val progress = dampedDragAnimation.pressProgress
@@ -301,7 +301,7 @@ fun LiquidBottomTabs(
                             effects = {
                                 val progress = dampedDragAnimation.pressProgress
                                 vibrancy()
-                                if (progress < 0.999f) blur(14f.dp.toPx() * (1f - progress))
+                                if (progress < 0.999f) blur(12f.dp.toPx() * (1f - progress))
                                 lens(
                                     10f.dp.toPx() * progress,
                                     14f.dp.toPx() * progress,
@@ -310,11 +310,11 @@ fun LiquidBottomTabs(
                             },
                             highlight = {
                                 val progress = dampedDragAnimation.pressProgress
-                                Highlight.Default.copy(alpha = 0.25f + 0.75f * progress)
+                                Highlight.Default.copy(alpha = 0.28f + 0.72f * progress)
                             },
                             shadow = {
                                 val progress = dampedDragAnimation.pressProgress
-                                Shadow(alpha = progress * 0.5f)
+                                Shadow(alpha = progress * 0.45f)
                             },
                             innerShadow = {
                                 val progress = dampedDragAnimation.pressProgress
@@ -333,11 +333,11 @@ fun LiquidBottomTabs(
                             onDrawSurface = {
                                 val progress = dampedDragAnimation.pressProgress
                                 drawRect(
-                                    if (isLightTheme) Color.Black.copy(alpha = 0.08f)
-                                    else Color.White.copy(alpha = 0.09f),
+                                    if (isLightTheme) Color.Black.copy(alpha = 0.10f)
+                                    else Color.Black.copy(alpha = 0.44f),
                                     alpha = 1f - progress
                                 )
-                                drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                                drawRect(Color.Black.copy(alpha = 0.04f * progress))
                             }
                         )
                     } else {
@@ -401,11 +401,11 @@ fun RowScope.LiquidNavTab(
     onClick: () -> Unit
 ) {
     val isLightTheme = !isDarkSurface && !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
-    val selectedRed = if (isLightTheme) Color(0xFFE53935) else Color(0xFFFF3B30)
+    val selectedRed = if (isLightTheme) Color(0xFFE52D27) else Color(0xFFFF2B2B)
     val contentColor = when {
         selected -> selectedRed
-        isLightTheme -> Color.Black.copy(alpha = 0.78f)
-        else -> Color.White.copy(alpha = 0.88f)
+        isLightTheme -> Color.Black.copy(alpha = 0.82f)
+        else -> Color.White.copy(alpha = 0.92f)
     }
     val active = tab == Tab.Downloads && Downloads.busy
 
