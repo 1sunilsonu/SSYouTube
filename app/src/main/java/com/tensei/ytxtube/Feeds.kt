@@ -44,8 +44,9 @@ import org.json.JSONObject
 
 private object HomeFeedCache {
     private const val PREFS_NAME = "ss_home_feed_cache"
-    private const val KEY_VIDEOS = "cached_home_videos_v1"
-    private const val MAX_CACHED = 30
+    private const val KEY_VIDEOS = "cached_home_videos_v2"
+    private const val KEY_LAUNCH_SEED = "home_launch_seed"
+    private const val MAX_CACHED = 40
 
     private fun prefs(context: Context? = null): SharedPreferences? {
         val appCtx = context?.applicationContext ?: runCatching {
@@ -58,12 +59,19 @@ private object HomeFeedCache {
         return appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
+    fun nextSeed(): Int {
+        val p = prefs() ?: return (System.currentTimeMillis() % 1000).toInt()
+        val next = (p.getInt(KEY_LAUNCH_SEED, 0) + 1) % 10000
+        p.edit().putInt(KEY_LAUNCH_SEED, next).apply()
+        return next
+    }
+
     fun load(context: Context? = null): List<VideoItem> {
         val raw = prefs(context)?.getString(KEY_VIDEOS, null).orEmpty()
         if (raw.isBlank()) return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
-            buildList {
+            val list = buildList {
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
                     val id = o.optString("id")
@@ -86,6 +94,7 @@ private object HomeFeedCache {
                     }
                 }
             }
+            list.shuffled()
         }.getOrDefault(emptyList())
     }
 
@@ -115,7 +124,7 @@ private object HomeFeedCache {
 private object SeenFeedStore {
     private const val PREFS_NAME = "ss_seen_feed_prefs"
     private const val KEY_SEEN_IDS = "seen_video_ids"
-    private const val MAX_SEEN = 450
+    private const val MAX_SEEN = 600
 
     private val lock = Any()
     private var prefs: SharedPreferences? = null
@@ -378,6 +387,8 @@ class FeedState(
 @Stable
 class LibraryData(scope: CoroutineScope) {
 
+    private var activeSessionSeed = HomeFeedCache.nextSeed()
+
     val home = FeedState(
         scope = scope,
         freshOnRefresh = false,
@@ -411,12 +422,27 @@ class LibraryData(scope: CoroutineScope) {
         "indian stand up comedy latest",
         "hindi tech review gadget india",
         "indian street food vlog hindi",
+        "rajasthani bhajan new official video",
+        "haryanvi new songs official video",
+        "bhojpuri hit songs official video",
+        "indian gaming live highlights hindi",
+        "new bollywood trailer official hindi",
+        "old hindi evergreen songs hits",
     )
 
-    private suspend fun fetchFreshQueryVideos(query: String, targetCount: Int): List<VideoItem> {
+    private suspend fun fetchFreshQueryVideos(query: String, targetCount: Int, skipPages: Int = 0): List<VideoItem> {
         val page1 = withTimeoutOrNull(3_500L) {
             runCatching { YouTube.searchPage(query, null) }.getOrNull()
         } ?: return emptyList()
+
+        if (skipPages > 0 && page1.next != null) {
+            val page2 = withTimeoutOrNull(2_800L) {
+                runCatching { YouTube.searchPage(query, page1.next) }.getOrNull()
+            }
+            val unseen2 = page2?.videos?.filterNot { SeenFeedStore.isSeen(it.id) }.orEmpty()
+            if (unseen2.isNotEmpty()) return unseen2.shuffled()
+        }
+
         val unseen1 = page1.videos.filterNot { SeenFeedStore.isSeen(it.id) }
         if (unseen1.size >= targetCount || page1.next == null) {
             return if (unseen1.isNotEmpty()) unseen1.shuffled() else page1.videos.shuffled()
@@ -425,7 +451,7 @@ class LibraryData(scope: CoroutineScope) {
             runCatching { YouTube.searchPage(query, page1.next) }.getOrNull()
         }
         val unseen2 = page2?.videos?.filterNot { SeenFeedStore.isSeen(it.id) }.orEmpty()
-        val combined = (unseen1 + unseen2)
+        val combined = unseen1 + unseen2
         return if (combined.isNotEmpty()) combined.shuffled() else (page1.videos + page2?.videos.orEmpty()).shuffled()
     }
 
@@ -443,37 +469,48 @@ class LibraryData(scope: CoroutineScope) {
         SeenFeedStore.ensureInit()
         UserTasteStore.ensureInit()
 
+        if (next == null) {
+            activeSessionSeed = HomeFeedCache.nextSeed()
+        }
         val pageNum = next?.removePrefix("yt_page:")?.toIntOrNull() ?: 1
+        val seed = activeSessionSeed + pageNum
         val watched = UserTasteStore.snapshot()
         val searches = SearchHistory.queries
 
         return coroutineScope {
             val pickedWatched = if (watched.isNotEmpty()) {
-                val latest = watched.first()
-                val older = watched.drop(1).shuffled().take(1)
-                (listOf(latest) + older).distinctBy { it.id }
+                val idx = seed % watched.size
+                val primary = watched[idx]
+                val secondary = watched.filter { it.id != primary.id }.shuffled().take(1)
+                listOf(primary) + secondary
             } else emptyList()
 
             val relatedDefs = pickedWatched.map { entry ->
                 async { fetchRelatedForWatched(entry.id).take(10) }
             }
 
-            val watchTopicQuery = watched.shuffled().firstOrNull()?.let { entry ->
-                if (pageNum % 2 == 0 && entry.channel.isNotBlank()) entry.channel else entry.topic
-            }
+            val watchTopicQuery = if (watched.isNotEmpty()) {
+                val entry = watched[(seed / 2) % watched.size]
+                if (seed % 2 == 0 && entry.channel.isNotBlank()) entry.channel else entry.topic
+            } else null
+
             val watchTopicDef = async {
-                if (!watchTopicQuery.isNullOrBlank()) fetchFreshQueryVideos(watchTopicQuery, 8).take(8)
-                else emptyList()
+                if (!watchTopicQuery.isNullOrBlank()) {
+                    fetchFreshQueryVideos(watchTopicQuery, 8, skipPages = seed % 2).take(8)
+                } else emptyList()
             }
 
             val searchQueriesToUse = when {
                 searches.isEmpty() -> emptyList()
                 searches.size == 1 -> listOf(searches[0])
-                pageNum == 1 -> listOf(searches[0], searches.drop(1).random()).distinct()
-                else -> searches.take(10).shuffled().take(2)
+                else -> {
+                    val s1 = searches[seed % searches.size]
+                    val s2 = searches[(seed + 3) % searches.size]
+                    listOf(s1, s2).distinct()
+                }
             }
-            val searchDefs = searchQueriesToUse.map { sq ->
-                async { fetchFreshQueryVideos(sq, 8).take(8) }
+            val searchDefs = searchQueriesToUse.mapIndexed { idx, sq ->
+                async { fetchFreshQueryVideos(sq, 8, skipPages = (seed + idx) % 2).take(8) }
             }
 
             val trendingDef = async {
@@ -491,12 +528,12 @@ class LibraryData(scope: CoroutineScope) {
             }
 
             val indiaCount = if (watched.isEmpty() && searches.isEmpty()) 3 else 2
-            val startIdx = ((pageNum - 1) * indiaCount) % indianDiscoveryQueries.size
+            val startIdx = (seed * indiaCount) % indianDiscoveryQueries.size
             val pickedIndiaQueries = (0 until indiaCount).map { offset ->
-                indianDiscoveryQueries[(startIdx + offset) % indianDiscoveryQueries.size]
+                indianDiscoveryQueries[(startIdx + offset * 5) % indianDiscoveryQueries.size]
             }.distinct()
-            val discoveryDefs = pickedIndiaQueries.map { q ->
-                async { fetchFreshQueryVideos(q, 10).take(10) }
+            val discoveryDefs = pickedIndiaQueries.mapIndexed { idx, q ->
+                async { fetchFreshQueryVideos(q, 10, skipPages = (seed + idx) % 2).take(10) }
             }
 
             val relatedLists = relatedDefs.map { it.await() }
@@ -528,7 +565,7 @@ class LibraryData(scope: CoroutineScope) {
                 }
             }
 
-            SeenFeedStore.markSeen(merged.take(22).map { it.id })
+            SeenFeedStore.markSeen(merged.take(24).map { it.id })
             val nextToken = "yt_page:${pageNum + 1}"
             FeedPage(merged, nextToken)
         }
