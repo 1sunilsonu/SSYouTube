@@ -1,10 +1,7 @@
 package com.tensei.ytxtube
 
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -22,9 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
@@ -44,6 +41,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,15 +50,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.util.Locale
 
-
-                    private data class Mp3QualityOption(
+private data class Mp3QualityOption(
     val kbps: Int,
     val title: String,
     val subtitle: String,
@@ -133,7 +134,6 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
             }
             Spacer(Modifier.height(14.dp))
 
-            // Liquid Glass Section Switcher: Video vs MP3 Audio
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -152,7 +152,7 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                             .background(
                                 if (isSelected) {
                                     Brush.horizontalGradient(
-                                        listOf(c.primary, c.primary.copy(alpha = 0.82f))
+                                        listOf(c.primary, c.primary.copy(alpha = 0.85f))
                                     )
                                 } else {
                                     Brush.horizontalGradient(
@@ -185,7 +185,6 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
             Spacer(Modifier.height(14.dp))
 
             if (activeTab == 0) {
-                // VIDEO SECTION
                 when {
                     error != null -> Text(
                         error!!,
@@ -248,7 +247,6 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                     }
                 }
             } else {
-                // MP3 AUDIO SECTION
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -300,47 +298,31 @@ fun DownloadQualitySheet(video: VideoItem, onDownloadStarted: ((String) -> Unit)
                 }
                 Spacer(Modifier.height(14.dp))
                 val chosenMp3 = mp3QualityOptions.first { it.kbps == selectedMp3Kbps }
-                val glassShape = CircleShape
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                        .pressable(pressedScale = 0.97f) {
-                            val added = Downloads.enqueueAudio(video)
-                            onDownloadStarted?.invoke(
-                                if (added) "Downloading ${chosenMp3.kbps}kbps MP3 • ${video.title}"
-                                else "MP3 already in downloads"
-                            )
-                            onDismiss()
-                        }
-                        .clip(glassShape)
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(
-                                    c.primary.copy(alpha = 0.88f),
-                                    Color.White.copy(alpha = 0.25f),
-                                    c.primary,
-                                )
-                            )
+                Button(
+                    onClick = {
+                        val added = Downloads.enqueueAudio(video)
+                        onDownloadStarted?.invoke(
+                            if (added) "Downloading ${chosenMp3.kbps}kbps MP3 • ${video.title}"
+                            else "MP3 already in downloads"
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.55f), glassShape),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = c.primary, contentColor = c.onPrimary),
                 ) {
-                    Icon(Icons.Rounded.MusicNote, null, tint = c.onPrimary, modifier = Modifier.size(19.dp))
+                    Icon(Icons.Rounded.MusicNote, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Download ${chosenMp3.kbps} kbps MP3",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.5.sp,
-                        color = c.onPrimary,
+                        fontSize = 14.sp,
                     )
                 }
             }
         }
     }
 }
-
 @Composable
 private fun QualityChoiceRow(option: DownloadOption, selected: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
@@ -378,7 +360,6 @@ private fun QualityChoiceRow(option: DownloadOption, selected: Boolean, onClick:
     Spacer(Modifier.height(6.dp))
 }
 
-
 @Composable
 fun DownloadsScreen(
     contentPadding: PaddingValues,
@@ -391,7 +372,21 @@ fun DownloadsScreen(
     scrollToTop: Int = 0,
 ) {
     val tasks = Downloads.tasks
+    val lifecycleOwner = LocalLifecycleOwner.current
 
+    LaunchedEffect(Unit) {
+        Downloads.syncWithStorage()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                Downloads.syncWithStorage()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     var section by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     val videos = tasks.filter { it.height > 0 }
