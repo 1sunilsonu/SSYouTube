@@ -4,6 +4,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,48 +16,46 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.unit.Dp
-import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,20 +64,11 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
-import kotlin.math.roundToInt
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
-
-
-
-
-
-
 
 class LobedShape(private val lobes: Int, private val depth: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
@@ -100,10 +91,7 @@ class LobedShape(private val lobes: Int, private val depth: Float) : Shape {
 val CookieShape = LobedShape(lobes = 9, depth = 0.075f)
 val SunnyShape = LobedShape(lobes = 8, depth = 0.05f)
 
-
-
 private val ScreenHeaderHorizontal = 16.dp
-
 
 @Composable
 fun ScreenHeader(
@@ -134,7 +122,6 @@ fun ScreenHeader(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { actions() }
     }
 }
-
 
 @Composable
 fun BackScreenHeader(
@@ -191,13 +178,6 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-
-
-
-
-
-
-
 @Composable
 fun BottomGestureGuard(modifier: Modifier = Modifier) {
     Box(
@@ -208,10 +188,6 @@ fun BottomGestureGuard(modifier: Modifier = Modifier) {
     )
 }
 
-
-
-
-
 fun Modifier.overlayTouchBlock(): Modifier = composed {
     clickable(
         indication = null,
@@ -219,13 +195,6 @@ fun Modifier.overlayTouchBlock(): Modifier = composed {
         onClick = {},
     )
 }
-
-
-
-
-
-
-
 
 fun Modifier.prefetchOnPress(videoId: String): Modifier = pointerInput(videoId) {
     awaitEachGesture {
@@ -243,25 +212,40 @@ fun Modifier.prefetchOnPress(videoId: String): Modifier = pointerInput(videoId) 
     }
 }
 
-
 val LocalVideoMenu = staticCompositionLocalOf<(VideoItem) -> Unit> { {} }
 
 @Composable
 fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22, videoId: String? = null) {
-    val model = remember(url, videoId) {
-        val id = videoId ?: url?.let(::ytVideoIdFromThumbUrl)
-        if (id != null) sharpenFeedThumbnail(url, id) else url
+    val id = remember(url, videoId) { videoId ?: url?.let(::ytVideoIdFromThumbUrl) }
+    var fallbackStep by remember(url, id) { mutableIntStateOf(0) }
+    val model = remember(url, id, fallbackStep) {
+        when {
+            id == null -> url
+            fallbackStep == 0 -> sharpenFeedThumbnail(url, id)
+            fallbackStep == 1 -> "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+            fallbackStep == 2 -> "https://i.ytimg.com/vi/$id/mqdefault.jpg"
+            else -> url
+        }
     }
     AsyncImage(
         model = model,
         contentDescription = null,
         contentScale = ContentScale.Crop,
+        onSuccess = { state ->
+            if (id != null && fallbackStep < 3 && state.result.drawable.intrinsicWidth in 1..130) {
+                fallbackStep++
+            }
+        },
+        onError = {
+            if (id != null && fallbackStep < 3) {
+                fallbackStep++
+            }
+        },
         modifier = modifier
             .clip(RoundedCornerShape(radius.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     )
 }
-
 @Composable
 fun DurationPill(seconds: Long, modifier: Modifier = Modifier, small: Boolean = false, isLive: Boolean = false) {
     if (isLive) {
@@ -289,8 +273,8 @@ fun DurationPill(seconds: Long, modifier: Modifier = Modifier, small: Boolean = 
     val fontSize = if (small) 10.5.sp else 11.5.sp
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(Color.Black.copy(alpha = 0.72f))
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.Black.copy(alpha = 0.76f))
             .padding(horizontal = if (small) 5.dp else 6.dp, vertical = if (small) 1.dp else 2.dp),
     ) {
         Text(
@@ -303,17 +287,12 @@ fun DurationPill(seconds: Long, modifier: Modifier = Modifier, small: Boolean = 
     }
 }
 
-
-
-
-
 @Composable
 fun ChannelAvatar(
     url: String?,
     name: String,
     size: Int = 40,
     selected: Boolean = false,
-
     ringSlot: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
@@ -327,23 +306,22 @@ fun ChannelAvatar(
         if (selected) {
             Box(Modifier.fillMaxSize().border(2.dp, Color.White, CircleShape))
         }
-    Box(
-        modifier = Modifier.size(size.dp).clip(if (url != null) CircleShape else CookieShape).background(c.tertiaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            name.trim().trimStart('@').take(1).uppercase(),
-            color = c.onTertiaryContainer,
-            fontWeight = FontWeight.Black,
-            fontSize = (size * 0.4f).sp,
-        )
-        if (model != null) {
-            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size.dp))
+        Box(
+            modifier = Modifier.size(size.dp).clip(if (url != null) CircleShape else CookieShape).background(c.tertiaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                name.trim().trimStart('@').take(1).uppercase(),
+                color = c.onTertiaryContainer,
+                fontWeight = FontWeight.Black,
+                fontSize = (size * 0.4f).sp,
+            )
+            if (model != null) {
+                AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size.dp))
+            }
         }
     }
-    }
 }
-
 
 @Composable
 fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -354,39 +332,43 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .fillMaxWidth()
             .prefetchOnPress(video.id)
             .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick)
-            .padding(bottom = 16.dp),
+            .padding(bottom = 18.dp),
     ) {
-        Box(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+        ) {
             Thumbnail(
                 video.thumbnail,
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                radius = 0,
+                radius = 16,
                 videoId = video.id,
             )
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(8.dp), isLive = video.isLive)
-            ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
+            ResumeBar(video.id, Modifier.align(Alignment.BottomStart).clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)))
         }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 4.dp, top = 12.dp),
+                .padding(start = 14.dp, end = 6.dp, top = 11.dp),
             verticalAlignment = Alignment.Top,
         ) {
             val openChannel = LocalChannelOpener.current
             Box(Modifier.pressable(enabled = video.channelUrl != null) { video.channelUrl?.let(openChannel) }) {
                 ChannelAvatar(video.feedAvatar(), video.channel, size = 36)
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     video.title,
-                    fontWeight = FontWeight.Normal,
-                    fontSize = 15.sp,
-                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.5.sp,
+                    lineHeight = 19.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     metaLine(video.channel, video.views, video.uploaded, video.isLive),
                     color = c.onSurfaceVariant,
@@ -398,12 +380,12 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             }
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(38.dp)
                     .pressable(onClick = { menu(video) }),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Rounded.MoreVert,
+                    Icons.Rounded.MoreHoriz,
                     contentDescription = "Options",
                     tint = c.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
@@ -412,7 +394,6 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
         }
     }
 }
-
 
 @Composable
 fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
@@ -427,7 +408,7 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(140.dp)) {
-            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 16)
+            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 14, videoId = video.id)
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true, isLive = video.isLive)
         }
         Spacer(Modifier.width(12.dp))
@@ -437,7 +418,7 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
             val viewsLabel = if (video.isLive) {
                 video.views.takeIf { it >= 0 }?.let { "${formatCount(it)} watching" } ?: "Live"
             } else {
-                video.views.takeIf { it >= 0 }?.let { "${formatCount(it)} views" }
+                video.views.takeIf { it >= 0 }?.let { "▷ ${formatCount(it)}" }
             }
             Text(
                 listOfNotNull(video.channel.ifBlank { null }, viewsLabel).joinToString(" · "),
@@ -452,7 +433,6 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
     }
 }
 
-
 @Composable
 fun ResumeBar(videoId: String, modifier: Modifier = Modifier) {
     val progress = ResumeStore.progress(videoId) ?: return
@@ -461,8 +441,6 @@ fun ResumeBar(videoId: String, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(c.primary))
     }
 }
-
-
 
 @Composable
 fun EmptyState(
@@ -514,8 +492,6 @@ fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null) {
     }
 }
 
-
-
 fun formatDuration(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
     val h = total / 3600
@@ -541,7 +517,6 @@ fun formatCount(n: Long): String {
         else -> trimmed(n / 1_000_000_000.0) + "B"
     }
 }
-
 
 fun formatStatCount(n: Long): String = when {
     n < 1_000 -> n.toString()
@@ -605,7 +580,7 @@ fun metaLine(channel: String, views: Long, uploaded: String?, isLive: Boolean = 
     } else {
         listOfNotNull(
             channel.ifBlank { null },
-            views.takeIf { it >= 0 }?.let { "${formatCount(it)} ${I18n.t("views", "views")}" },
+            views.takeIf { it >= 0 }?.let { "▷ ${formatCount(it)}" },
             uploaded?.ifBlank { null }?.let { I18n.translateTimeAgo(it) },
         ).joinToString(" · ")
     }
