@@ -24,6 +24,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -85,6 +86,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -95,6 +97,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -125,6 +128,8 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -154,6 +159,8 @@ internal const val StageFrameAspect = 16f / 9f
 internal const val AudioStageAspect = 2.5f
 
 private const val DetailsFadeStart = 0.55f
+
+private val LocalPlayerGlowBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 @Composable
 fun PlayerScreen(
@@ -228,119 +235,172 @@ fun PlayerScreen(
         isDark -> Color(0xFF1A1A1E)
         else -> Color(0xFFFFFFFF)
     }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                val g = morph.geometry ?: return@graphicsLayer
-                val p = morph.progress.value
-                val full = Rect(Offset.Zero, size)
-                val frame = Rect(
-                    lerpF(g.miniCard.left, full.left, p), lerpF(g.miniCard.top, full.top, p),
-                    lerpF(g.miniCard.right, full.right, p), lerpF(g.miniCard.bottom, full.bottom, ramp(p, 0.3f)),
-                )
-                shape = RoundRectClip(frame, lerpF(g.miniRadius, 0f, p.coerceIn(0f, 1f)))
-                clip = true
-            }
-            .drawBehind {
-                val p = morph.progress.value
-                drawRect(lerpColor(miniColor, pageColor, ramp(p, 0f, 0.6f)))
-            }
-            .drawBehind {
-                if (isAmoled || !GlassQuality.effectsSupported || state.isMusicMode || size.width < 10f || size.height < 10f) return@drawBehind
-                val topStrength = if (isAmoled) 0.40f else if (isDark) 0.35f else 0.22f
-                val bodyStrength = if (isAmoled) 0.30f else if (isDark) 0.26f else 0.16f
-                val aspect = state.stageAspect.coerceAtLeast(0.5f)
-                val topRadius = (size.width * 0.95f).coerceAtLeast(10f)
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(ambientColor.copy(alpha = topStrength), Color.Transparent),
-                        center = Offset(size.width * (0.2f + 0.6f * ambientDrift), 0f),
-                        radius = topRadius,
-                    ),
-                )
-                val startY = top.toPx() + (size.width / aspect * 0.4f).coerceAtLeast(0f)
-                val glowReach = minOf(size.height * 0.58f, size.width * 1.35f).coerceAtLeast(startY + 50f)
-                drawRect(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            ambientColor.copy(alpha = bodyStrength * 0.85f),
-                            ambientColor.copy(alpha = bodyStrength * 0.65f),
-                            ambientColor.copy(alpha = bodyStrength * 0.25f),
-                            Color.Transparent,
-                        ),
-                        startY = startY,
-                        endY = glowReach,
-                    ),
-                )
-                val bottomRadius = (size.width * 0.85f).coerceAtLeast(10f)
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(ambientColor.copy(alpha = bodyStrength * 0.7f), Color.Transparent),
-                        center = Offset(size.width * (0.85f - 0.7f * ambientDrift), top.toPx() + size.width / aspect + 100f),
-                        radius = bottomRadius,
-                    ),
-                )
-            }
-            .then(if (interactive) Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } } else Modifier),
-    ) {
-        ActionMessage(state, Modifier.align(Alignment.BottomCenter).zIndex(1f).padding(bottom = bottom + 24.dp))
-        if (state.isMusicMode) {
-            val p = morph.progress.value
+    val playerGlowBackdrop = rememberLayerBackdrop()
+
+    CompositionLocalProvider(LocalPlayerGlowBackdrop provides playerGlowBackdrop) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val g = morph.geometry ?: return@graphicsLayer
+                    val p = morph.progress.value
+                    val full = Rect(Offset.Zero, size)
+                    val frame = Rect(
+                        lerpF(g.miniCard.left, full.left, p), lerpF(g.miniCard.top, full.top, p),
+                        lerpF(g.miniCard.right, full.right, p), lerpF(g.miniCard.bottom, full.bottom, ramp(p, 0.3f)),
+                    )
+                    shape = RoundRectClip(frame, lerpF(g.miniRadius, 0f, p.coerceIn(0f, 1f)))
+                    clip = true
+                }
+                .then(if (interactive) Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } } else Modifier),
+        ) {
+            // Non-cyclic background layer captured into playerGlowBackdrop for safe refraction
             Box(
                 Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        alpha = ramp(p, 0.35f)
-                        translationY = lerpF(48f, 0f, ramp(p, 0.35f))
+                    .layerBackdrop(playerGlowBackdrop)
+                    .drawBehind {
+                        val p = morph.progress.value
+                        drawRect(lerpColor(miniColor, pageColor, ramp(p, 0f, 0.6f)))
                     }
-            ) {
-                BitChordMusicPlayer(
-                    state = state,
-                    onCollapse = onCollapse,
-                    dominantColor = dominantColor,
-                    top = top,
-                    bottom = bottom,
-                )
-            }
-        } else {
-            val screenConfig = androidx.compose.ui.platform.LocalConfiguration.current
-            val isWide = TvMode.isTv || screenConfig.screenWidthDp >= 640
-            if (isWide) {
-                Row(Modifier.fillMaxSize()) {
-                    Column(
-                        Modifier
-                            .weight(0.60f)
-                            .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
-                    ) {
+                    .drawBehind {
+                        if (isAmoled || !GlassQuality.effectsSupported || state.isMusicMode || size.width < 10f || size.height < 10f) return@drawBehind
+                        val topStrength = if (isDark) 0.35f else 0.24f
+                        val bodyStrength = if (isDark) 0.26f else 0.18f
+                        val aspect = state.stageAspect.coerceAtLeast(0.5f)
+                        val topRadius = (size.width * 0.95f).coerceAtLeast(10f)
+                        drawRect(
+                            Brush.radialGradient(
+                                colors = listOf(ambientColor.copy(alpha = topStrength), Color.Transparent),
+                                center = Offset(size.width * (0.2f + 0.6f * ambientDrift), 0f),
+                                radius = topRadius,
+                            ),
+                        )
+                        val startY = top.toPx() + (size.width / aspect * 0.4f).coerceAtLeast(0f)
+                        val glowReach = minOf(size.height * 0.58f, size.width * 1.35f).coerceAtLeast(startY + 50f)
+                        drawRect(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    ambientColor.copy(alpha = bodyStrength * 0.85f),
+                                    ambientColor.copy(alpha = bodyStrength * 0.65f),
+                                    ambientColor.copy(alpha = bodyStrength * 0.25f),
+                                    Color.Transparent,
+                                ),
+                                startY = startY,
+                                endY = glowReach,
+                            ),
+                        )
+                        val bottomRadius = (size.width * 0.85f).coerceAtLeast(10f)
+                        drawRect(
+                            Brush.radialGradient(
+                                colors = listOf(ambientColor.copy(alpha = bodyStrength * 0.7f), Color.Transparent),
+                                center = Offset(size.width * (0.85f - 0.7f * ambientDrift), top.toPx() + size.width / aspect + 100f),
+                                radius = bottomRadius,
+                            ),
+                        )
+                    }
+            )
+
+            ActionMessage(state, Modifier.align(Alignment.BottomCenter).zIndex(1f).padding(bottom = bottom + 24.dp))
+            if (state.isMusicMode) {
+                val p = morph.progress.value
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = ramp(p, 0.35f)
+                            translationY = lerpF(48f, 0f, ramp(p, 0.35f))
+                        }
+                ) {
+                    BitChordMusicPlayer(
+                        state = state,
+                        onCollapse = onCollapse,
+                        dominantColor = dominantColor,
+                        top = top,
+                        bottom = bottom,
+                    )
+                }
+            } else {
+                val screenConfig = androidx.compose.ui.platform.LocalConfiguration.current
+                val isWide = TvMode.isTv || screenConfig.screenWidthDp >= 640
+                if (isWide) {
+                    Row(Modifier.fillMaxSize()) {
+                        Column(
+                            Modifier
+                                .weight(0.60f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Spacer(Modifier.height(top))
+                            Box(Modifier.zIndex(2f)) {
+                                VideoStage(state, morph, onCollapse, onFullscreen, interactive)
+                            }
+                            if (showDetails) {
+                                VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream)
+                            }
+                            Spacer(Modifier.height(bottom + 32.dp))
+                        }
+                        Column(
+                            Modifier
+                                .weight(0.40f)
+                                .fillMaxHeight()
+                        ) {
+                            Spacer(Modifier.height(top))
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = bottom + 32.dp),
+                            ) {
+                                item(key = "wideMoreTitle") { SectionTitle("More videos") }
+                                val related = details?.related.orEmpty()
+                                if (related.isNotEmpty()) {
+                                    items(related, key = { "wide-rel-" + it.id }) { video ->
+                                        Box(Modifier.padding(horizontal = 14.dp, vertical = 2.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                                    }
+                                } else if (state.loading) {
+                                    item(key = "wideLoading") {
+                                        Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
+                                            CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Column(Modifier.fillMaxSize()) {
                         Spacer(Modifier.height(top))
+
                         Box(Modifier.zIndex(2f)) {
                             VideoStage(state, morph, onCollapse, onFullscreen, interactive)
                         }
-                        if (showDetails) {
-                            VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream)
-                        }
-                        Spacer(Modifier.height(bottom + 32.dp))
-                    }
-                    Column(
-                        Modifier
-                            .weight(0.40f)
-                            .fillMaxHeight()
-                    ) {
-                        Spacer(Modifier.height(top))
+
+                        if (!showDetails) Spacer(Modifier.weight(1f)) else
                         LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .zIndex(0f)
+                                .nestedScroll(morph.nestedScroll)
+                                .graphicsLayer {
+                                    val p = morph.progress.value
+                                    alpha = ramp(p, DetailsFadeStart)
+                                    val g = morph.geometry
+                                    translationY = if (g != null && p < 0.98f) {
+                                        lerpF(g.miniThumb.bottom - g.stage.bottom, 0f, p)
+                                    } else {
+                                        0f
+                                    }
+                                },
                             contentPadding = PaddingValues(bottom = bottom + 32.dp),
                         ) {
-                            item(key = "wideMoreTitle") { SectionTitle("More videos") }
+                            item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream) }
                             val related = details?.related.orEmpty()
                             if (related.isNotEmpty()) {
-                                items(related, key = { "wide-rel-" + it.id }) { video ->
-                                    Box(Modifier.padding(horizontal = 14.dp, vertical = 2.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                                item(key = "moreTitle") { SectionTitle("More videos") }
+                                items(related, key = { "rel-" + it.id }) { video ->
+                                    Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
                                 }
                             } else if (state.loading) {
-                                item(key = "wideLoading") {
+                                item(key = "loading") {
                                     Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
                                         CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
                                     }
@@ -349,71 +409,29 @@ fun PlayerScreen(
                         }
                     }
                 }
-            } else {
-                Column(Modifier.fillMaxSize()) {
-                    Spacer(Modifier.height(top))
-
-                    Box(Modifier.zIndex(2f)) {
-                        VideoStage(state, morph, onCollapse, onFullscreen, interactive)
-                    }
-
-                    if (!showDetails) Spacer(Modifier.weight(1f)) else
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .zIndex(0f)
-                            .nestedScroll(morph.nestedScroll)
-                            .graphicsLayer {
-                                val p = morph.progress.value
-                                alpha = ramp(p, DetailsFadeStart)
-                                val g = morph.geometry
-                                translationY = if (g != null && p < 0.98f) {
-                                    lerpF(g.miniThumb.bottom - g.stage.bottom, 0f, p)
-                                } else {
-                                    0f
-                                }
-                            },
-                        contentPadding = PaddingValues(bottom = bottom + 32.dp),
-                    ) {
-                        item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream) }
-                        val related = details?.related.orEmpty()
-                        if (related.isNotEmpty()) {
-                            item(key = "moreTitle") { SectionTitle("More videos") }
-                            items(related, key = { "rel-" + it.id }) { video ->
-                                Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
-                            }
-                        } else if (state.loading) {
-                            item(key = "loading") {
-                                Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
-                                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-                                }
-                            }
-                        }
-                    }
-                }
+                if (interactive) BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
+                MorphingMiniDetails(state, morph)
             }
-            if (interactive) BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
-            MorphingMiniDetails(state, morph)
-        }
 
-        if (state.sheet == PlayerSheet.Comments) {
-            val detailItem = state.details?.item
-            if (isLiveStream) {
-                LiveChatPanel(
-                    state.liveChat,
-                    onSignIn = onSignIn,
-                    onClose = { state.sheet = null },
-                )
-            } else {
-                val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
-                val videoBottom = top + top + (screenW - StageSideGap * 2) / state.stageAspect
-                CommentsPanel(
-                    state.comments,
-                    partialTop = videoBottom + 10.dp,
-                    onClose = { state.sheet = null },
-                    creatorAvatar = detailItem?.avatar,
-                    creatorName = detailItem?.channel.orEmpty(),
-                )
+            if (state.sheet == PlayerSheet.Comments) {
+                val detailItem = state.details?.item
+                if (isLiveStream) {
+                    LiveChatPanel(
+                        state.liveChat,
+                        onSignIn = onSignIn,
+                        onClose = { state.sheet = null },
+                    )
+                } else {
+                    val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+                    val videoBottom = top + top + (screenW - StageSideGap * 2) / state.stageAspect
+                    CommentsPanel(
+                        state.comments,
+                        partialTop = videoBottom + 10.dp,
+                        onClose = { state.sheet = null },
+                        creatorAvatar = detailItem?.avatar,
+                        creatorName = detailItem?.channel.orEmpty(),
+                    )
+                }
             }
         }
     }
@@ -660,23 +678,40 @@ private fun ActionPill(
     onClick: () -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
-    val backdrop = LocalGlassBackdrop.current
-    val dark = isDarkTheme()
+    val backdrop = LocalPlayerGlowBackdrop.current
+    val isLight = !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
+    val isAmoled = ThemeSettings.mode == "amoled"
     val glassSupported = backdrop != null && GlassQuality.effectsSupported
-    val bg by animateColorAsState(
-        if (active) c.primary else c.surfaceContainerHigh,
+
+    val fallbackBg by animateColorAsState(
+        when {
+            active -> c.primary
+            isLight -> Color.White.copy(alpha = 0.85f)
+            isAmoled -> Color(0xFF14161C)
+            else -> Color(0xFF1E222B)
+        },
         tween(220),
         label = "pillBg",
     )
     val tint by animateColorAsState(
-        if (active) c.onPrimary else c.onSurface,
+        when {
+            active -> Color.White
+            isLight -> Color(0xFF111318)
+            else -> Color.White
+        },
         tween(220),
         label = "pillInk",
     )
     val glassTint = when {
-        active -> c.primary.copy(alpha = 0.82f)
-        dark -> Color(0xFF1D2028).copy(alpha = 0.48f)
-        else -> Color.White.copy(alpha = 0.56f)
+        active -> c.primary.copy(alpha = 0.86f)
+        isLight -> Color.White.copy(alpha = 0.78f)
+        isAmoled -> Color(0xFF101217).copy(alpha = 0.68f)
+        else -> Color(0xFF1B1E26).copy(alpha = 0.56f)
+    }
+    val borderColor = when {
+        active -> Color.White.copy(alpha = 0.40f)
+        isLight -> Color.White.copy(alpha = 0.92f)
+        else -> Color.White.copy(alpha = 0.18f)
     }
     val spec = glassSpec(
         shape = shape,
@@ -696,8 +731,8 @@ private fun ActionPill(
                 } else {
                     Modifier
                         .clip(shape)
-                        .background(bg)
-                        .border(1.dp, c.onSurface.copy(alpha = 0.12f), shape)
+                        .background(fallbackBg)
+                        .border(1.dp, borderColor, shape)
                 }
             )
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 500f))
@@ -746,13 +781,13 @@ fun LiquidMiniPlayer(
         !glassOn -> if (isAmoled) Color.Black else c.surfaceContainerHigh
         isAmoled -> Color(0xFF000000).copy(alpha = 0.6f)
         isDark -> Color(0xFF16161A).copy(alpha = 0.65f)
-        else -> Color(0xFFFFFFFF).copy(alpha = 0.72f)
+        else -> Color(0xFFFFFFFF).copy(alpha = 0.78f)
     }
     val glassBorder = when {
         !glassOn -> c.outlineVariant
         isAmoled -> Color(0xFF333333).copy(alpha = 0.7f)
-        isDark -> Color(0xFFFFFFFF).copy(alpha = 0.14f)
-        else -> Color(0xFF000000).copy(alpha = 0.08f)
+        isDark -> Color(0xFFFFFFFF).copy(alpha = 0.16f)
+        else -> Color(0xFFFFFFFF).copy(alpha = 0.90f)
     }
 
     Box(
