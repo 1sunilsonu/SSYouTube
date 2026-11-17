@@ -39,6 +39,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -68,6 +69,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MusicNote
@@ -77,7 +79,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -117,6 +118,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -321,9 +323,17 @@ fun YtxTubeApp() {
     val navTop = stackBottom + NavLift + NavHeight
     var optionsFor by remember { mutableStateOf<VideoItem?>(null) }
     var downloadNotice by remember { mutableStateOf<String?>(null) }
+    var downloadingVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var downloadBannerDismissed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Downloads.busy) {
+        if (Downloads.busy) {
+            downloadBannerDismissed = false
+        }
+    }
     LaunchedEffect(downloadNotice) {
-        if (downloadNotice != null) {
-            kotlinx.coroutines.delay(4000)
+        if (downloadNotice != null && !Downloads.busy) {
+            kotlinx.coroutines.delay(3500)
             downloadNotice = null
         }
     }
@@ -478,7 +488,6 @@ fun YtxTubeApp() {
     val showPlayer by remember {
         derivedStateOf { player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
     }
-
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
         val stageAspect = player.stageAspect
         val stageTopPx = with(density) {
@@ -537,6 +546,7 @@ fun YtxTubeApp() {
         CompositionLocalProvider(
             LocalVideoSurface provides if (pip.active) NoVideoSurface else sharedSurface,
             LocalPictureInPicture provides pip,
+            LocalGlassBackdrop provides glassBackdrop,
             LocalVideoMenu provides { optionsFor = it },
             LocalChannelOpener provides { url ->
                 player.expanded = false
@@ -914,60 +924,44 @@ fun YtxTubeApp() {
             player.downloadFor?.let { video ->
                 DownloadQualitySheet(
                     video = video,
-                    onDownloadStarted = { msg -> downloadNotice = msg },
+                    onDownloadStarted = { msg ->
+                        downloadingVideo = video
+                        downloadBannerDismissed = false
+                        downloadNotice = msg
+                    },
                     onDismiss = { player.downloadFor = null },
                 )
             }
 
+            val showDownloadPill = (Downloads.busy || downloadNotice != null) && !downloadBannerDismissed && !showFullscreen
             AnimatedVisibility(
-                visible = downloadNotice != null,
+                visible = showDownloadPill,
                 enter = slideInVertically(tween(280, easing = Motion.Emphasized)) { it } + fadeIn(),
                 exit = slideOutVertically(tween(200, easing = Motion.Emphasized)) { it } + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp)
-                    .padding(horizontal = 20.dp),
+                    .padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 8.dp)
+                    .padding(horizontal = 16.dp)
+                    .widthIn(max = NavWidth)
+                    .fillMaxWidth(),
             ) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = c.surfaceContainerHighest,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.widthIn(max = 420.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Download,
-                            contentDescription = null,
-                            tint = c.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            downloadNotice.orEmpty(),
-                            color = c.onSurface,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(
-                            onClick = {
-                                tab = Tab.Downloads
-                                downloadNotice = null
-                                if (showPlayer) player.expanded = false
-                            },
-                        ) {
-                            Text("VIEW", fontWeight = FontWeight.Bold, color = c.primary, fontSize = 13.sp)
-                        }
-                    }
-                }
+                LiquidDownloadProgressPill(
+                    video = downloadingVideo,
+                    busy = Downloads.busy,
+                    progress = Downloads.progress,
+                    statusMessage = downloadNotice,
+                    backdrop = glassBackdrop,
+                    onOpenDownloads = {
+                        tab = Tab.Downloads
+                        if (showPlayer) player.expanded = false
+                    },
+                    onDismiss = {
+                        downloadBannerDismissed = true
+                        downloadNotice = null
+                    },
+                )
             }
+
             optionsFor?.let { video -> VideoOptionsSheet(video, player, onDismiss = { optionsFor = null }) }
 
             if (!showPlayer) {
@@ -984,6 +978,113 @@ fun YtxTubeApp() {
         }
     }
 }
+
+@Composable
+private fun LiquidDownloadProgressPill(
+    video: VideoItem?,
+    busy: Boolean,
+    progress: Float,
+    statusMessage: String?,
+    backdrop: Backdrop,
+    onOpenDownloads: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    val dark = isSystemInDarkTheme() || ThemeSettings.mode == "dark" || ThemeSettings.mode == "amoled"
+    val shape = RoundedCornerShape(16.dp)
+    val pct = if (busy) (progress.coerceIn(0f, 1f) * 100f).roundToInt() else 100
+    val tint = if (dark) Color(0xFF1A1C22).copy(alpha = 0.64f) else Color(0xFFF5F6FA).copy(alpha = 0.74f)
+    val spec = glassSpec(
+        shape = shape,
+        tint = tint,
+        blur = 18.dp,
+        refractionHeight = 14.dp,
+        refractionAmount = 18.dp,
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidGlass(backdrop, spec)
+            .clickable(onClick = onOpenDownloads),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Thumbnail(
+                url = video?.thumbnail,
+                modifier = Modifier.size(width = 64.dp, height = 38.dp),
+                radius = 8,
+                videoId = video?.id,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = video?.title?.ifBlank { null } ?: "Downloading media",
+                        color = c.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "$pct%",
+                        color = c.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    )
+                }
+                Spacer(Modifier.height(3.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (busy) (statusMessage ?: "Downloading...") else (statusMessage ?: "Download complete"),
+                        color = c.onSurfaceVariant,
+                        fontSize = 11.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(c.onSurface.copy(alpha = 0.14f))
+                            .clickable(onClick = onDismiss),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Dismiss",
+                            tint = c.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.5.dp)
+                .background(c.onSurface.copy(alpha = 0.12f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(if (busy) progress.coerceIn(0.03f, 1f) else 1f)
+                    .fillMaxHeight()
+                    .background(Color(0xFF3EA6FF)),
+            )
+        }
+    }
+}
+
 @Composable
 private fun QueueMessage(player: PlayerState, modifier: Modifier) {
     val message = player.actionMessage ?: return
