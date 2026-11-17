@@ -44,6 +44,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -54,7 +55,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastCoerceIn
@@ -141,8 +144,8 @@ fun LiquidBottomTabs(
     val solidContainer = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
     val containerColor = when {
         !glassSupported -> solidContainer
-        isAmoled -> Color(0xFF0A0A0C).copy(alpha = 0.66f)
-        isLightTheme -> Color(0xFFF6F6F8).copy(alpha = 0.68f)
+        isAmoled -> Color(0xFF0A0A0C).copy(alpha = 0.72f)
+        isLightTheme -> Color(0xFFF2F4F8).copy(alpha = 0.76f)
         else -> Color(0xFF141416).copy(alpha = 0.62f)
     }
 
@@ -240,6 +243,7 @@ fun LiquidBottomTabs(
                 }
             )
         }
+
         Box(
             Modifier
                 .graphicsLayer {
@@ -256,10 +260,10 @@ fun LiquidBottomTabs(
                                 lens(12f.dp.toPx(), 14f.dp.toPx())
                             },
                             highlight = {
-                                Highlight.Default.copy(alpha = 0.35f)
+                                Highlight.Default.copy(alpha = if (isLightTheme) 0.75f else 0.35f)
                             },
                             shadow = {
-                                Shadow(alpha = 0.30f)
+                                Shadow(alpha = if (isLightTheme) 0.14f else 0.30f)
                             },
                             layerBlock = {
                                 val progress = dampedDragAnimation.pressProgress
@@ -275,7 +279,7 @@ fun LiquidBottomTabs(
                             .background(containerColor)
                             .border(
                                 1.dp,
-                                MaterialTheme.colorScheme.outlineVariant,
+                                if (isLightTheme) Color.White.copy(alpha = 0.90f) else MaterialTheme.colorScheme.outlineVariant,
                                 Capsule(),
                             )
                     }
@@ -284,7 +288,6 @@ fun LiquidBottomTabs(
                 .height(62f.dp)
                 .fillMaxWidth()
         )
-
         Box(
             Modifier
                 .padding(horizontal = 4f.dp)
@@ -310,11 +313,11 @@ fun LiquidBottomTabs(
                             },
                             highlight = {
                                 val progress = dampedDragAnimation.pressProgress
-                                Highlight.Default.copy(alpha = 0.28f + 0.72f * progress)
+                                Highlight.Default.copy(alpha = (if (isLightTheme) 0.72f else 0.28f) + 0.28f * progress)
                             },
                             shadow = {
                                 val progress = dampedDragAnimation.pressProgress
-                                Shadow(alpha = progress * 0.45f)
+                                Shadow(alpha = (if (isLightTheme) 0.10f else 0.22f) + progress * 0.25f)
                             },
                             innerShadow = {
                                 val progress = dampedDragAnimation.pressProgress
@@ -333,17 +336,20 @@ fun LiquidBottomTabs(
                             onDrawSurface = {
                                 val progress = dampedDragAnimation.pressProgress
                                 drawRect(
-                                    if (isLightTheme) Color.Black.copy(alpha = 0.10f)
+                                    if (isLightTheme) Color.White.copy(alpha = 0.90f)
                                     else Color.Black.copy(alpha = 0.44f),
                                     alpha = 1f - progress
                                 )
-                                drawRect(Color.Black.copy(alpha = 0.04f * progress))
+                                drawRect(
+                                    if (isLightTheme) Color.White.copy(alpha = 0.20f * progress)
+                                    else Color.Black.copy(alpha = 0.04f * progress)
+                                )
                             }
                         )
                     } else {
                         Modifier
                             .clip(Capsule())
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .background(if (isLightTheme) Color.White else MaterialTheme.colorScheme.surfaceContainerHighest)
                     }
                 )
                 .height(54f.dp)
@@ -404,7 +410,7 @@ fun RowScope.LiquidNavTab(
     val selectedRed = if (isLightTheme) Color(0xFFE52D27) else Color(0xFFFF2B2B)
     val contentColor = when {
         selected -> selectedRed
-        isLightTheme -> Color.Black.copy(alpha = 0.82f)
+        isLightTheme -> Color(0xFF1A1D24).copy(alpha = 0.78f)
         else -> Color.White.copy(alpha = 0.92f)
     }
     val active = tab == Tab.Downloads && Downloads.busy
@@ -448,5 +454,276 @@ fun RowScope.LiquidNavTab(
                 stepSize = 0.5.sp,
             ),
         )
+    }
+}
+
+@Composable
+fun LiquidGlassSliderTabs(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    backdrop: Backdrop?,
+    modifier: Modifier = Modifier,
+    height: Dp = 40.dp,
+    fontSize: TextUnit = 12.5.sp,
+    accentSelectedText: Boolean = false,
+) {
+    if (options.isEmpty()) return
+    val tabsCount = options.size
+    val safeSelected = selectedIndex.coerceIn(0, tabsCount - 1)
+    val isLightTheme = !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
+    val isAmoled = ThemeSettings.mode == "amoled"
+    val glassSupported = backdrop != null && GlassQuality.effectsSupported
+
+    val trackColor = when {
+        isLightTheme -> Color(0xFFE5E8F0).copy(alpha = 0.72f)
+        isAmoled -> Color(0xFF0A0B0F).copy(alpha = 0.76f)
+        else -> Color(0xFF151820).copy(alpha = 0.62f)
+    }
+    val trackBorder = when {
+        isLightTheme -> Color.White.copy(alpha = 0.92f)
+        isAmoled -> Color.White.copy(alpha = 0.18f)
+        else -> Color.White.copy(alpha = 0.16f)
+    }
+    val pillColor = when {
+        isLightTheme -> Color.White.copy(alpha = 0.92f)
+        isAmoled -> Color(0xFF1D2029).copy(alpha = 0.88f)
+        else -> Color(0xFF282D3A).copy(alpha = 0.80f)
+    }
+
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val density = LocalDensity.current
+        val padPx = with(density) { 6.dp.toPx() }
+        val tabWidth = ((constraints.maxWidth.toFloat() - padPx).coerceAtLeast(1f)) / tabsCount
+        val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
+        val animationScope = rememberCoroutineScope()
+        val view = LocalView.current
+
+        val offsetAnimation = remember { Animatable(0f) }
+        val panelOffset by remember(density) {
+            derivedStateOf {
+                val fraction = (offsetAnimation.value / constraints.maxWidth.coerceAtLeast(1)).fastCoerceIn(-1f, 1f)
+                with(density) {
+                    2.5.dp.toPx() * fraction.sign * EaseOut.transform(abs(fraction))
+                }
+            }
+        }
+
+        var currentIndex by remember { mutableIntStateOf(safeSelected) }
+        val dampedDragAnimation = remember(animationScope, tabsCount) {
+            DampedDragAnimation(
+                animationScope = animationScope,
+                initialValue = safeSelected.toFloat(),
+                valueRange = 0f..(tabsCount - 1).toFloat(),
+                visibilityThreshold = 0.001f,
+                initialScale = 1f,
+                pressedScale = 1.07f,
+                onDragStarted = {
+                    view.navHaptic(12L, 120)
+                },
+                onDragStopped = {
+                    val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                    view.navHaptic(14L, 140)
+                    currentIndex = targetIndex
+                    animateToValue(targetIndex.toFloat())
+                    animationScope.launch {
+                        offsetAnimation.animateTo(0f, spring(1f, 320f, 0.5f))
+                    }
+                },
+                onDrag = { _, dragAmount ->
+                    val before = targetValue.fastRoundToInt()
+                    updateValue(
+                        (targetValue + dragAmount.x / tabWidth * if (isLtr) 1f else -1f)
+                            .fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                    )
+                    if (targetValue.fastRoundToInt() != before) {
+                        view.navHaptic(10L, 120)
+                    }
+                    animationScope.launch {
+                        offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
+                    }
+                }
+            )
+        }
+
+        LaunchedEffect(safeSelected) {
+            currentIndex = safeSelected
+            if (dampedDragAnimation.targetValue != safeSelected.toFloat()) {
+                dampedDragAnimation.animateToValue(safeSelected.toFloat())
+            }
+        }
+        LaunchedEffect(dampedDragAnimation) {
+            snapshotFlow { currentIndex }
+                .drop(1)
+                .collectLatest { index ->
+                    dampedDragAnimation.animateToValue(index.toFloat())
+                    onSelect(index)
+                }
+        }
+
+        val interactiveHighlight = remember(animationScope) {
+            InteractiveHighlight(
+                animationScope = animationScope,
+                position = { size, _ ->
+                    Offset(
+                        if (isLtr) (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset
+                        else size.width - (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset,
+                        size.height / 2f
+                    )
+                }
+            )
+        }
+
+        // Outer Liquid Glass track
+        Box(
+            Modifier
+                .graphicsLayer { translationX = panelOffset }
+                .then(
+                    if (glassSupported && backdrop != null) {
+                        Modifier.drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { Capsule() },
+                            effects = {
+                                vibrancy()
+                                blur(12f.dp.toPx())
+                                lens(10f.dp.toPx(), 12f.dp.toPx())
+                            },
+                            highlight = {
+                                Highlight.Default.copy(alpha = if (isLightTheme) 0.75f else 0.30f)
+                            },
+                            shadow = {
+                                Shadow(alpha = if (isLightTheme) 0.10f else 0.24f)
+                            },
+                            onDrawSurface = { drawRect(trackColor) }
+                        )
+                    } else {
+                        Modifier
+                            .clip(Capsule())
+                            .background(trackColor)
+                            .border(1.dp, trackBorder, Capsule())
+                    }
+                )
+                .then(interactiveHighlight.modifier)
+                .height(height)
+                .fillMaxWidth()
+        )
+
+        // Sliding Liquid Glass Capsule Pill
+        val pillHeight = (height - 6.dp).coerceAtLeast(24.dp)
+        Box(
+            Modifier
+                .padding(horizontal = 3.dp)
+                .graphicsLayer {
+                    translationX =
+                        if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset
+                        else size.width - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset
+                }
+                .then(
+                    if (glassSupported && backdrop != null) {
+                        Modifier.drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { Capsule() },
+                            effects = {
+                                val progress = dampedDragAnimation.pressProgress
+                                vibrancy()
+                                if (progress < 0.999f) blur(10f.dp.toPx() * (1f - progress))
+                                lens(
+                                    8f.dp.toPx() * progress,
+                                    12f.dp.toPx() * progress,
+                                    chromaticAberration = true
+                                )
+                            },
+                            highlight = {
+                                Highlight.Default.copy(alpha = if (isLightTheme) 0.85f else 0.42f)
+                            },
+                            shadow = {
+                                Shadow(alpha = if (isLightTheme) 0.14f else 0.32f)
+                            },
+                            layerBlock = {
+                                scaleX = dampedDragAnimation.scaleX
+                                scaleY = dampedDragAnimation.scaleY
+                                val velocity = dampedDragAnimation.velocity / 10f
+                                scaleX /= 1f - (velocity * 0.65f).fastCoerceIn(-0.18f, 0.18f)
+                                scaleY *= 1f - (velocity * 0.22f).fastCoerceIn(-0.18f, 0.18f)
+                            },
+                            onDrawSurface = { drawRect(pillColor) }
+                        )
+                    } else {
+                        Modifier
+                            .shadow(if (isLightTheme) 4.dp else 2.dp, Capsule())
+                            .clip(Capsule())
+                            .background(pillColor)
+                            .border(
+                                1.dp,
+                                if (isLightTheme) Color.White else Color.White.copy(alpha = 0.24f),
+                                Capsule()
+                            )
+                    }
+                )
+                .height(pillHeight)
+                .fillMaxWidth(1f / tabsCount)
+        )
+
+        // Single-line option labels
+        val activeVisualIndex = dampedDragAnimation.value.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+        Row(
+            Modifier
+                .graphicsLayer { translationX = panelOffset }
+                .then(interactiveHighlight.gestureModifier)
+                .then(dampedDragAnimation.modifier)
+                .height(height)
+                .fillMaxWidth()
+                .padding(horizontal = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            options.forEachIndexed { index, label ->
+                val isSelected = index == activeVisualIndex
+                val textColor = when {
+                    isSelected && accentSelectedText -> if (isLightTheme) Color(0xFFE52D27) else Color(0xFFFF3B3B)
+                    isSelected && isLightTheme -> Color(0xFF0E1015)
+                    isSelected -> Color.White
+                    isLightTheme -> Color(0xFF1E222B).copy(alpha = 0.72f)
+                    else -> Color.White.copy(alpha = 0.72f)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(Capsule())
+                        .clickable(
+                            interactionSource = null,
+                            indication = null,
+                            role = Role.Tab,
+                            onClick = {
+                                view.navHaptic(10L, 110)
+                                onSelect(index)
+                            }
+                        )
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BasicText(
+                        text = label,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = TextStyle(
+                            color = textColor,
+                            fontSize = fontSize,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 9.sp,
+                            maxFontSize = fontSize,
+                            stepSize = 0.5.sp,
+                        ),
+                    )
+                }
+            }
+        }
     }
 }
