@@ -1,20 +1,30 @@
 package com.tensei.ytxtube
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -25,22 +35,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SubtitlesOff
 import androidx.compose.material.icons.rounded.WatchLater
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,48 +59,126 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
+@Composable
+fun LiquidGlassOverlayCard(
+    onDismiss: () -> Unit,
+    centered: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    val backdrop = LocalGlassBackdrop.current
+    val dark = isSystemInDarkTheme() || ThemeSettings.mode == "dark" || ThemeSettings.mode == "amoled"
+    BackHandler(onBack = onDismiss)
 
+    val shape = if (centered) {
+        RoundedCornerShape(24.dp)
+    } else {
+        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    }
+    val tint = if (dark) {
+        Color(0xFF141416).copy(alpha = 0.62f)
+    } else {
+        Color(0xFFF6F6F8).copy(alpha = 0.68f)
+    }
+    val spec = glassSpec(
+        shape = shape,
+        tint = tint,
+        blur = 20.dp,
+        refractionHeight = 14.dp,
+        refractionAmount = 18.dp,
+    )
 
-@OptIn(ExperimentalMaterial3Api::class)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(60f),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = if (centered) 0.28f else 0.42f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
+                ),
+        )
+        Column(
+            modifier = Modifier
+                .align(if (centered) Alignment.Center else Alignment.BottomCenter)
+                .then(
+                    if (centered) {
+                        Modifier
+                            .padding(horizontal = 34.dp)
+                            .widthIn(max = 340.dp)
+                            .fillMaxWidth()
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 640.dp)
+                    }
+                )
+                .then(
+                    if (backdrop != null) {
+                        Modifier.liquidGlass(backdrop, spec)
+                    } else {
+                        Modifier
+                            .clip(shape)
+                            .background(c.surfaceContainerLow)
+                            .border(1.dp, Color.White.copy(alpha = 0.22f), shape)
+                    }
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                )
+                .then(if (centered) Modifier else Modifier.navigationBarsPadding()),
+            content = content,
+        )
+    }
+}
+
 @Composable
 fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Unit) {
-    val c = MaterialTheme.colorScheme
     val context = LocalContext.current
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surfaceContainerLow,
-    ) {
-        Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Thumbnail(video.thumbnail, Modifier.width(112.dp).aspectRatio(16f / 9f), radius = 14)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(video.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(video.channel, color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
+    LiquidGlassOverlayCard(onDismiss = onDismiss, centered = true) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            OptionRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next in queue") {
+                player.playNext(video)
+                onDismiss()
+            }
+            OptionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Play last in queue") {
+                player.addToQueue(video)
+                onDismiss()
+            }
+            if (Account.signedIn) {
+                OptionRow(Icons.Rounded.WatchLater, "Save to Watch later") {
+                    player.saveToWatchLater(video)
+                    onDismiss()
+                }
+            }
+            OptionRow(Icons.Rounded.Download, "Download") {
+                player.downloadFor = video
+                onDismiss()
+            }
+            OptionRow(Icons.Rounded.Share, "Share") {
+                val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, "https://youtu.be/${video.id}")
+                    .putExtra(Intent.EXTRA_SUBJECT, video.title)
+                context.startActivity(Intent.createChooser(send, null))
+                onDismiss()
             }
         }
-        OptionRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next") { player.playNext(video); onDismiss() }
-        OptionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to queue") { player.addToQueue(video); onDismiss() }
-        OptionRow(Icons.Rounded.Download, "Download") { player.downloadFor = video; onDismiss() }
-        if (Account.signedIn) {
-            OptionRow(Icons.Rounded.WatchLater, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
-        }
-        OptionRow(Icons.Rounded.Share, "Share") {
-            val send = Intent(Intent.ACTION_SEND).setType("text/plain")
-                .putExtra(Intent.EXTRA_TEXT, "https://youtu.be/${video.id}")
-                .putExtra(Intent.EXTRA_SUBJECT, video.title)
-            context.startActivity(Intent.createChooser(send, null))
-            onDismiss()
-        }
-        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -101,18 +186,24 @@ fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Un
 private fun OptionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Row(
-        Modifier.fillMaxWidth().pressable(pressedScale = 0.98f, onClick = onClick).padding(horizontal = 24.dp, vertical = 15.dp),
+        Modifier
+            .fillMaxWidth()
+            .pressable(pressedScale = 0.97f, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = c.onSurface)
-        Spacer(Modifier.width(18.dp))
-        Text(label, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Icon(icon, null, tint = c.onSurface, modifier = Modifier.size(21.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(
+            label,
+            color = c.onSurface,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
-
-
-
-
 @Composable
 fun QueueCard(player: PlayerState, onOpen: () -> Unit) {
     val c = MaterialTheme.colorScheme
@@ -140,11 +231,18 @@ fun QueueCard(player: PlayerState, onOpen: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surfaceContainerLow) {
+    LiquidGlassOverlayCard(onDismiss = onDismiss, centered = false) {
+        Box(
+            Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 10.dp, bottom = 6.dp)
+                .size(width = 38.dp, height = 4.dp)
+                .clip(CircleShape)
+                .background(c.onSurfaceVariant.copy(alpha = 0.35f)),
+        )
         Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Queue", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp, modifier = Modifier.weight(1f))
             if (player.queue.isNotEmpty()) {
@@ -161,7 +259,7 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
             )
         } else {
-            LazyColumn(Modifier.fillMaxHeight(0.7f)) {
+            LazyColumn(Modifier.fillMaxHeight(0.65f)) {
                 itemsIndexed(player.queue, key = { i, v -> "$i-${v.id}" }) { index, video ->
                     Box(Modifier.padding(horizontal = 20.dp)) {
                         VideoRow(video, onClick = { player.playFromQueue(index); onDismiss() }) {
@@ -173,11 +271,9 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
                 }
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
     }
 }
-
-
 
 @Composable
 fun SponsorBlockSettings() {
@@ -233,9 +329,6 @@ private fun CategoryRow(category: SponsorBlock.Category) {
         }
     }
 }
-
-
-
 
 @Composable
 fun AppearanceSettings() {
@@ -299,8 +392,6 @@ fun AppearanceSettings() {
     }
 }
 
-/** Subtitles / Closed Captions selection bottom sheet, matching FlashTube. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubtitlesSheet(
     player: PlayerState,
@@ -339,21 +430,24 @@ fun SubtitlesSheet(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surfaceContainerLow,
-    ) {
+    LiquidGlassOverlayCard(onDismiss = onDismiss, centered = false) {
+        Box(
+            Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 10.dp, bottom = 6.dp)
+                .size(width = 38.dp, height = 4.dp)
+                .clip(CircleShape)
+                .background(c.onSurfaceVariant.copy(alpha = 0.35f)),
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
+                .padding(bottom = 24.dp),
         ) {
             Text("Captions / Subtitles", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
             Spacer(Modifier.height(14.dp))
 
-            // Option 1: Off (Turn off captions)
             val isOff = player.selectedSubtitleLanguage == null
             Row(
                 modifier = Modifier
@@ -363,7 +457,7 @@ fun SubtitlesSheet(
                         onDismiss()
                     }
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (isOff) c.surfaceContainerHigh else Color.Transparent)
+                    .background(if (isOff) c.surfaceContainerHigh.copy(alpha = 0.55f) else Color.Transparent)
                     .padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -404,7 +498,7 @@ fun SubtitlesSheet(
                                     onDismiss()
                                 }
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (selected) c.surfaceContainerHigh else Color.Transparent)
+                                .background(if (selected) c.surfaceContainerHigh.copy(alpha = 0.55f) else Color.Transparent)
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -426,4 +520,3 @@ fun SubtitlesSheet(
         }
     }
 }
-
