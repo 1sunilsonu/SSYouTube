@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -31,7 +30,6 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -45,17 +43,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,9 +61,6 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -77,15 +69,11 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
+import kotlin.math.abs
+import kotlin.math.sign
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.math.sign
-
-
-
-
 
 private fun View.navHaptic(durationMs: Long = 12L, amplitude: Int = 120) {
     val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
@@ -137,10 +125,6 @@ fun RowScope.LiquidBottomTab(
     )
 }
 
-
-
-
-
 @Composable
 fun LiquidBottomTabs(
     selectedTabIndex: () -> Int,
@@ -153,19 +137,14 @@ fun LiquidBottomTabs(
 ) {
     val isLightTheme = !isDarkSurface && !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
     val isAmoled = ThemeSettings.mode == "amoled"
-    val accentColor =
-        if (isLightTheme) Color(0xFF0088FF)
-        else Color(0xFF0091FF)
     val glassSupported = GlassQuality.effectsSupported
     val solidContainer = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
     val containerColor = when {
         !glassSupported -> solidContainer
-        isAmoled -> Color(0xFF000000).copy(0.45f)
-        isLightTheme -> Color(0xFFFAFAFA).copy(0.4f)
-        else -> Color(0xFF121212).copy(0.4f)
+        isAmoled -> Color(0xFF0A0A0C).copy(alpha = 0.78f)
+        isLightTheme -> Color(0xFFF6F6F8).copy(alpha = 0.78f)
+        else -> Color(0xFF141416).copy(alpha = 0.74f)
     }
-
-    val tabsBackdrop = rememberLayerBackdrop()
 
     BoxWithConstraints(
         modifier,
@@ -199,7 +178,7 @@ fun LiquidBottomTabs(
                 valueRange = 0f..(tabsCount - 1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
-                pressedScale = 78f / 56f,
+                pressedScale = 76f / 56f,
                 onDragStarted = {
                     view.navHaptic(18L, 170)
                 },
@@ -261,8 +240,6 @@ fun LiquidBottomTabs(
                 }
             )
         }
-
-        // 1. Bottom navigation bar background capsule
         Box(
             Modifier
                 .graphicsLayer {
@@ -275,12 +252,18 @@ fun LiquidBottomTabs(
                             shape = { Capsule() },
                             effects = {
                                 vibrancy()
-                                blur(8f.dp.toPx())
-                                lens(24f.dp.toPx(), 24f.dp.toPx())
+                                blur(18f.dp.toPx())
+                                lens(10f.dp.toPx(), 12f.dp.toPx())
+                            },
+                            highlight = {
+                                Highlight.Default.copy(alpha = 0.35f)
+                            },
+                            shadow = {
+                                Shadow(alpha = 0.28f)
                             },
                             layerBlock = {
                                 val progress = dampedDragAnimation.pressProgress
-                                val scale = lerp(1f, 1f + 16f.dp.toPx() / size.width, progress)
+                                val scale = lerp(1f, 1f + 12f.dp.toPx() / size.width, progress)
                                 scaleX = scale
                                 scaleY = scale
                             },
@@ -298,12 +281,10 @@ fun LiquidBottomTabs(
                     }
                 )
                 .then(interactiveHighlight.modifier)
-                .height(64f.dp)
+                .height(62f.dp)
                 .fillMaxWidth()
         )
 
-        // 2. Moving active tab indicator pill. It stays *behind* the tab row so
-        // the icons and labels are never distorted by the glass lens.
         Box(
             Modifier
                 .padding(horizontal = 4f.dp)
@@ -319,11 +300,8 @@ fun LiquidBottomTabs(
                             shape = { Capsule() },
                             effects = {
                                 val progress = dampedDragAnimation.pressProgress
-                                // Frosted at rest exactly like the bar itself; the blur
-                                // clears while the pill is held so the press lens and
-                                // highlight read as a separate interaction.
                                 vibrancy()
-                                if (progress < 0.999f) blur(8f.dp.toPx() * (1f - progress))
+                                if (progress < 0.999f) blur(14f.dp.toPx() * (1f - progress))
                                 lens(
                                     10f.dp.toPx() * progress,
                                     14f.dp.toPx() * progress,
@@ -332,11 +310,11 @@ fun LiquidBottomTabs(
                             },
                             highlight = {
                                 val progress = dampedDragAnimation.pressProgress
-                                Highlight.Default.copy(alpha = progress)
+                                Highlight.Default.copy(alpha = 0.25f + 0.75f * progress)
                             },
                             shadow = {
                                 val progress = dampedDragAnimation.pressProgress
-                                Shadow(alpha = progress)
+                                Shadow(alpha = progress * 0.5f)
                             },
                             innerShadow = {
                                 val progress = dampedDragAnimation.pressProgress
@@ -355,8 +333,8 @@ fun LiquidBottomTabs(
                             onDrawSurface = {
                                 val progress = dampedDragAnimation.pressProgress
                                 drawRect(
-                                    if (isLightTheme) Color.Black.copy(0.12f)
-                                    else Color.White.copy(0.12f),
+                                    if (isLightTheme) Color.Black.copy(alpha = 0.08f)
+                                    else Color.White.copy(alpha = 0.09f),
                                     alpha = 1f - progress
                                 )
                                 drawRect(Color.Black.copy(alpha = 0.03f * progress))
@@ -368,15 +346,13 @@ fun LiquidBottomTabs(
                             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                     }
                 )
-                .height(56f.dp)
+                .height(54f.dp)
                 .fillMaxWidth(1f / tabsCount)
         )
 
-        // 3. Tab icons and labels on top. The drag gestures live on this row so
-        // the pill can stay behind the icons while drag-to-switch still works.
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.15f, dampedDragAnimation.pressProgress)
+                lerp(1f, 1.12f, dampedDragAnimation.pressProgress)
             }
         ) {
             Row(
@@ -386,7 +362,7 @@ fun LiquidBottomTabs(
                     }
                     .then(interactiveHighlight.gestureModifier)
                     .then(dampedDragAnimation.modifier)
-                    .height(64f.dp)
+                    .height(62f.dp)
                     .fillMaxWidth()
                     .padding(4f.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -395,7 +371,6 @@ fun LiquidBottomTabs(
         }
     }
 }
-
 
 @Composable
 fun LiquidBottomBar(
@@ -426,37 +401,41 @@ fun RowScope.LiquidNavTab(
     onClick: () -> Unit
 ) {
     val isLightTheme = !isDarkSurface && !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
-    val contentColor = if (isLightTheme) Color.Black else Color.White
+    val selectedRed = if (isLightTheme) Color(0xFFE53935) else Color(0xFFFF3B30)
+    val contentColor = when {
+        selected -> selectedRed
+        isLightTheme -> Color.Black.copy(alpha = 0.78f)
+        else -> Color.White.copy(alpha = 0.88f)
+    }
     val active = tab == Tab.Downloads && Downloads.busy
 
     LiquidBottomTab(onClick = onClick) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(26.dp)
         ) {
             if (active) {
                 CircularProgressIndicator(
                     progress = { Downloads.progress },
                     color = contentColor,
                     strokeWidth = 1.5.dp,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
             Icon(
                 if (selected) tab.selectedIcon else tab.icon,
                 contentDescription = tab.label,
                 tint = contentColor,
-                modifier = Modifier.size(if (active) 18.dp else 22.dp)
+                modifier = Modifier.size(if (active) 17.dp else 21.dp)
             )
         }
-
 
         BasicText(
             text = tab.label,
             modifier = Modifier.fillMaxWidth(),
             style = TextStyle(
                 color = contentColor,
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 letterSpacing = 0.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 textAlign = TextAlign.Center,
@@ -465,7 +444,7 @@ fun RowScope.LiquidNavTab(
             softWrap = false,
             autoSize = TextAutoSize.StepBased(
                 minFontSize = 8.sp,
-                maxFontSize = 11.sp,
+                maxFontSize = 10.5.sp,
                 stepSize = 0.5.sp,
             ),
         )
