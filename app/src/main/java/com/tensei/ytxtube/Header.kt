@@ -16,9 +16,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import kotlinx.coroutines.launch
 
 @Composable
 fun CollapsingHeaderLayout(
@@ -48,31 +47,42 @@ fun CollapsingHeaderLayout(
     val density = LocalDensity.current
     val c = MaterialTheme.colorScheme
     val reduced = rememberReducedMotion()
-    val scope = rememberCoroutineScope()
     var headerPx by remember { mutableIntStateOf(0) }
+    var offsetPx by remember { mutableFloatStateOf(0f) }
+    val settleAnim = remember { Animatable(0f) }
+    val settleSpec = remember { spring<Float>(dampingRatio = 0.92f, stiffness = 460f) }
 
-    val offset = remember { Animatable(0f) }
-    val settleSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 420f)
-
-    LaunchedEffect(resetKey) { if (reduced) offset.snapTo(0f) else offset.animateTo(0f, settleSpec) }
+    LaunchedEffect(resetKey) {
+        if (offsetPx != 0f) {
+            if (reduced) {
+                offsetPx = 0f
+            } else {
+                settleAnim.snapTo(offsetPx)
+                settleAnim.animateTo(0f, settleSpec) { offsetPx = value }
+            }
+        }
+    }
 
     val connection = remember(reduced) {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 val h = headerPx.toFloat()
                 if (h <= 0f || consumed.y == 0f) return Offset.Zero
-
-                val target = (offset.value + consumed.y).coerceIn(-h, 0f)
-                scope.launch { offset.snapTo(target) }
+                offsetPx = (offsetPx + consumed.y).coerceIn(-h, 0f)
                 return Offset.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 val h = headerPx.toFloat()
-                val v = offset.value
+                val v = offsetPx
                 if (h > 0f && v < 0f && v > -h) {
                     val target = if (v < -h / 2f) -h else 0f
-                    if (reduced) offset.snapTo(target) else offset.animateTo(target, settleSpec)
+                    if (reduced) {
+                        offsetPx = target
+                    } else {
+                        settleAnim.snapTo(v)
+                        settleAnim.animateTo(target, settleSpec) { offsetPx = value }
+                    }
                 }
                 return Velocity.Zero
             }
@@ -81,14 +91,17 @@ fun CollapsingHeaderLayout(
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val headerBackdrop = rememberLayerBackdrop()
-    val headerBg = if (GlassQuality.effectsSupported) {
-        Brush.verticalGradient(
-            0f to c.surface.copy(alpha = 0.94f),
-            0.58f to c.surface.copy(alpha = 0.72f),
-            1f to c.surface.copy(alpha = 0.0f),
-        )
-    } else {
-        Brush.verticalGradient(listOf(c.surface, c.surface))
+    val surfaceColor = c.surface
+    val headerBg = remember(surfaceColor, GlassQuality.effectsSupported) {
+        if (GlassQuality.effectsSupported) {
+            Brush.verticalGradient(
+                0f to surfaceColor.copy(alpha = 0.95f),
+                0.62f to surfaceColor.copy(alpha = 0.76f),
+                1f to surfaceColor.copy(alpha = 0.0f),
+            )
+        } else {
+            Brush.verticalGradient(listOf(surfaceColor, surfaceColor))
+        }
     }
 
     Box(Modifier.fillMaxSize().nestedScroll(connection)) {
@@ -96,24 +109,20 @@ fun CollapsingHeaderLayout(
             content(with(density) { headerPx.toDp() })
         }
 
-        val page = c.surface
-        val vignette = remember(page) { vignetteBrush(page, opaqueAtTop = true) }
+        val vignette = remember(surfaceColor) { vignetteBrush(surfaceColor, opaqueAtTop = true) }
         Box(
             Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .height((statusTop + 72.dp) / 2)
-                .graphicsLayer { alpha = if (headerPx > 0) (-offset.value / headerPx).coerceIn(0f, 1f) else 0f }
+                .graphicsLayer { alpha = if (headerPx > 0) (-offsetPx / headerPx).coerceIn(0f, 1f) else 0f }
                 .drawBehind { drawRect(vignette) },
         )
         Box(
             Modifier
                 .fillMaxWidth()
                 .onSizeChanged { headerPx = it.height }
-                .graphicsLayer {
-                    translationY = offset.value
-                    alpha = if (headerPx > 0) 1f - 0.5f * (-offset.value / headerPx).coerceIn(0f, 1f) else 1f
-                }
+                .graphicsLayer { translationY = offsetPx }
                 .background(headerBg),
         ) {
             CompositionLocalProvider(LocalGlassBackdrop provides headerBackdrop) { header() }
