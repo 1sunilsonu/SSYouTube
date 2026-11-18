@@ -636,7 +636,7 @@ fun FeedList(
     LaunchedEffect(list.isScrollInProgress) {
         if (!list.isScrollInProgress && listVideos.isNotEmpty()) {
             delay(900L)
-            if (list.isScrollInProgress) return@delay
+            if (list.isScrollInProgress) return@LaunchedEffect
             val validIds = listVideos.mapTo(HashSet()) { it.id }
             val firstVisibleId = list.layoutInfo.visibleItemsInfo
                 .mapNotNull { it.key as? String }
