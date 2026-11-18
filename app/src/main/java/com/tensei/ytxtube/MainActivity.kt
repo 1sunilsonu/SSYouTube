@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -122,12 +123,43 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private object ColdStartSplashState {
     var hasPlayed = false
+}
+
+private fun enforceSmoothRefreshRate(activity: Activity) {
+    runCatching {
+        val target = RefreshRateSettings.targetHz
+        val win = activity.window ?: return@runCatching
+        val lp: WindowManager.LayoutParams = win.attributes
+        val disp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            activity.display
+        } else {
+            @Suppress("DEPRECATION")
+            activity.windowManager?.defaultDisplay
+        }
+        if (disp != null) {
+            val modes = disp.supportedModes
+            val desiredHz = if (target > 0) target.toFloat() else modes.maxOfOrNull { it.refreshRate } ?: 90f
+            val bestMode = modes
+                .filter { it.physicalWidth == disp.mode.physicalWidth && it.physicalHeight == disp.mode.physicalHeight }
+                .minByOrNull { abs(it.refreshRate - desiredHz) }
+                ?: modes.minByOrNull { abs(it.refreshRate - desiredHz) }
+            if (bestMode != null) {
+                lp.preferredDisplayModeId = bestMode.modeId
+                lp.preferredRefreshRate = bestMode.refreshRate
+                win.attributes = lp
+            }
+        } else if (target > 0) {
+            lp.preferredRefreshRate = target.toFloat()
+            win.attributes = lp
+        }
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -141,6 +173,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         RefreshRateSettings.applyToActivity(this)
+        enforceSmoothRefreshRate(this)
         enableHdrOutput()
 
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -167,6 +200,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         RefreshRateSettings.applyToActivity(this)
+        enforceSmoothRefreshRate(this)
     }
 
     override fun onPause() {
@@ -285,7 +319,7 @@ fun YtxTubeApp() {
 
     val pageBackdrop = rememberLayerBackdrop()
     val playerBackdrop = rememberLayerBackdrop()
-    val glassBackdrop = rememberCombinedBackdrop(pageBackdrop, playerBackdrop)
+    val combinedGlassBackdrop = rememberCombinedBackdrop(pageBackdrop, playerBackdrop)
 
     val rootView = LocalView.current
     DisposableEffect(player.isPlaying) {
@@ -350,6 +384,7 @@ fun YtxTubeApp() {
 
     LaunchedEffect(RefreshRateSettings.targetHz) {
         RefreshRateSettings.applyToActivity(activity)
+        enforceSmoothRefreshRate(activity)
     }
 
     orientation.Bind(playerOpen && !AudioOnly.enabled && !player.isMusicMode)
@@ -488,6 +523,7 @@ fun YtxTubeApp() {
     val showPlayer by remember {
         derivedStateOf { player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
     }
+    val activeGlassBackdrop = if (showPlayer || showFullscreen) combinedGlassBackdrop else pageBackdrop
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
         val stageAspect = player.stageAspect
         val stageTopPx = with(density) {
@@ -546,7 +582,7 @@ fun YtxTubeApp() {
         CompositionLocalProvider(
             LocalVideoSurface provides if (pip.active) NoVideoSurface else sharedSurface,
             LocalPictureInPicture provides pip,
-            LocalGlassBackdrop provides glassBackdrop,
+            LocalGlassBackdrop provides activeGlassBackdrop,
             LocalVideoMenu provides { optionsFor = it },
             LocalChannelOpener provides { url ->
                 player.expanded = false
@@ -902,7 +938,7 @@ fun YtxTubeApp() {
                 enter = fadeIn(tween(180, easing = Motion.Emphasized)),
                 exit = fadeOut(tween(150)),
             ) {
-                PlayerSettingsSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+                PlayerSettingsSheet(player, activeGlassBackdrop, onDismiss = { player.sheet = null })
             }
 
             AnimatedVisibility(
@@ -910,7 +946,7 @@ fun YtxTubeApp() {
                 enter = fadeIn(tween(180, easing = Motion.Emphasized)),
                 exit = fadeOut(tween(150)),
             ) {
-                SpeedSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+                SpeedSheet(player, activeGlassBackdrop, onDismiss = { player.sheet = null })
             }
 
             AnimatedVisibility(
@@ -918,7 +954,7 @@ fun YtxTubeApp() {
                 enter = fadeIn(tween(180, easing = Motion.Emphasized)),
                 exit = fadeOut(tween(150)),
             ) {
-                AudioTrackSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+                AudioTrackSheet(player, activeGlassBackdrop, onDismiss = { player.sheet = null })
             }
 
             player.downloadFor?.let { video ->
@@ -950,7 +986,7 @@ fun YtxTubeApp() {
                     busy = Downloads.busy,
                     progress = Downloads.progress,
                     statusMessage = downloadNotice,
-                    backdrop = glassBackdrop,
+                    backdrop = activeGlassBackdrop,
                     onOpenDownloads = {
                         tab = Tab.Downloads
                         if (showPlayer) player.expanded = false
