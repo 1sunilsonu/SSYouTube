@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -65,6 +66,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -216,9 +219,10 @@ val LocalVideoMenu = staticCompositionLocalOf<(VideoItem) -> Unit> { {} }
 
 @Composable
 fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22, videoId: String? = null) {
+    val context = LocalContext.current
     val id = remember(url, videoId) { videoId ?: url?.let(::ytVideoIdFromThumbUrl) }
     var fallbackStep by remember(url, id) { mutableIntStateOf(0) }
-    val model = remember(url, id, fallbackStep) {
+    val resolvedUrl = remember(url, id, fallbackStep) {
         when {
             id == null -> url
             fallbackStep == 0 -> sharpenFeedThumbnail(url, id)
@@ -227,8 +231,26 @@ fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22, vid
             else -> url
         }
     }
+    val request = remember(resolvedUrl, context) {
+        resolvedUrl?.let {
+            ImageRequest.Builder(context)
+                .data(it)
+                .crossfade(false)
+                .allowHardware(true)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .build()
+        }
+    }
+    val clippedModifier = if (radius > 0) {
+        modifier
+            .clip(RoundedCornerShape(radius.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+    } else {
+        modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)
+    }
     AsyncImage(
-        model = model,
+        model = request,
         contentDescription = null,
         contentScale = ContentScale.Crop,
         onSuccess = { state ->
@@ -241,9 +263,7 @@ fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22, vid
                 fallbackStep++
             }
         },
-        modifier = modifier
-            .clip(RoundedCornerShape(radius.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        modifier = clippedModifier,
     )
 }
 @Composable
@@ -296,11 +316,21 @@ fun ChannelAvatar(
     ringSlot: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
+    val context = LocalContext.current
     val density = LocalDensity.current
     val minPx = remember(size, density) {
         (size.dp.value * density.density * 2f).roundToInt().coerceIn(88, 240)
     }
     val model = remember(url, minPx) { url?.let { sharpenChannelAvatarUrl(normalizeChannelAvatarUrl(it), minPx) } }
+    val request = remember(model, context) {
+        model?.let {
+            ImageRequest.Builder(context)
+                .data(it)
+                .crossfade(false)
+                .allowHardware(true)
+                .build()
+        }
+    }
     val outer = if (ringSlot) (size + 4).dp else size.dp
     Box(modifier = Modifier.size(outer), contentAlignment = Alignment.Center) {
         if (selected) {
@@ -316,8 +346,8 @@ fun ChannelAvatar(
                 fontWeight = FontWeight.Black,
                 fontSize = (size * 0.4f).sp,
             )
-            if (model != null) {
-                AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size.dp))
+            if (request != null) {
+                AsyncImage(model = request, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size.dp))
             }
         }
     }
@@ -330,23 +360,23 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .prefetchOnPress(video.id)
-            .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick)
+            .pressable(pressedScale = 0.985f, onLongClick = { menu(video) }, onClick = onClick)
             .padding(bottom = 18.dp),
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 12.dp)
+                .clip(RoundedCornerShape(16.dp)),
         ) {
             Thumbnail(
                 video.thumbnail,
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                radius = 16,
+                radius = 0,
                 videoId = video.id,
             )
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(8.dp), isLive = video.isLive)
-            ResumeBar(video.id, Modifier.align(Alignment.BottomStart).clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)))
+            ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
         Row(
             modifier = Modifier
@@ -402,7 +432,6 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .prefetchOnPress(video.id)
             .pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
