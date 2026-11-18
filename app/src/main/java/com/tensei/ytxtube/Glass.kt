@@ -26,7 +26,6 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.isRuntimeShaderSupported
 import com.kyant.backdrop.shadow.InnerShadow
@@ -77,11 +76,12 @@ fun glassFill(alpha: Float = 1f): Color {
     if (!GlassQuality.effectsSupported) {
         return MaterialTheme.colorScheme.surfaceContainerHigh
     }
-    val dark = isSystemInDarkTheme()
-    return if (dark) {
-        Color(0xFF141820).copy(alpha = 0.14f * alpha)
-    } else {
-        Color.White.copy(alpha = 0.18f * alpha)
+    val isLight = !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
+    val isAmoled = ThemeSettings.mode == "amoled"
+    return when {
+        isLight -> Color(0xFFF6F8FC).copy(alpha = (0.72f * alpha).coerceIn(0f, 1f))
+        isAmoled -> Color(0xFF0C0E12).copy(alpha = (0.68f * alpha).coerceIn(0f, 1f))
+        else -> Color(0xFF161A22).copy(alpha = (0.56f * alpha).coerceIn(0f, 1f))
     }
 }
 
@@ -109,18 +109,18 @@ fun glassSpec(
     shape: Shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
     tint: Color = glassFill(),
     blur: Dp = 10.dp,
-    refractionHeight: Dp = 24.dp,
-    refractionAmount: Dp = 44.dp,
+    refractionHeight: Dp = 14.dp,
+    refractionAmount: Dp = 22.dp,
     shadow: Shadow? = Shadow.Default,
     highlight: Highlight? = Highlight.Default,
-    innerShadow: InnerShadow? = InnerShadow.Default.copy(radius = 8.dp, alpha = 0.16f),
-    chromaticAberration: Boolean = true,
+    innerShadow: InnerShadow? = InnerShadow.Default.copy(radius = 6.dp, alpha = 0.14f),
+    chromaticAberration: Boolean = false,
 ): GlassSpec = GlassSpec(
     shape = shape,
     tint = if (GlassQuality.effectsSupported) tint else tint.copy(alpha = 1f),
-    blur = blur,
-    refractionHeight = refractionHeight,
-    refractionAmount = refractionAmount,
+    blur = blur.coerceAtMost(12.dp),
+    refractionHeight = refractionHeight.coerceAtMost(16.dp),
+    refractionAmount = refractionAmount.coerceAtMost(26.dp),
     shadow = shadow,
     highlight = highlight,
     innerShadow = innerShadow,
@@ -133,13 +133,17 @@ fun Modifier.liquidGlass(backdrop: Backdrop, spec: GlassSpec): Modifier =
             backdrop = backdrop,
             shape = { spec.shape },
             effects = {
-                vibrancy()
-                blur(spec.blur.toPx())
-                lens(
-                    spec.refractionHeight.toPx(),
-                    spec.refractionAmount.toPx(),
-                    chromaticAberration = spec.chromaticAberration,
-                )
+                val blurPx = spec.blur.toPx()
+                if (blurPx > 0.5f) blur(blurPx)
+                val refH = spec.refractionHeight.toPx()
+                val refA = spec.refractionAmount.toPx()
+                if (refH > 0.5f && refA > 0.5f) {
+                    lens(
+                        refH,
+                        refA,
+                        chromaticAberration = spec.chromaticAberration,
+                    )
+                }
             },
             highlight = spec.highlight?.let { h -> { h } },
             shadow = spec.shadow?.let { s -> { s } },
@@ -148,9 +152,9 @@ fun Modifier.liquidGlass(backdrop: Backdrop, spec: GlassSpec): Modifier =
                 if (spec.tint.isSpecified) drawRect(spec.tint)
                 drawRect(
                     Brush.verticalGradient(
-                        0f to Color.White.copy(alpha = 0.18f),
+                        0f to Color.White.copy(alpha = 0.16f),
                         0.45f to Color.Transparent,
-                        1f to Color.White.copy(alpha = 0.05f),
+                        1f to Color.White.copy(alpha = 0.04f),
                     ),
                 )
             },
@@ -179,4 +183,3 @@ private fun Modifier.fallbackGlass(spec: GlassSpec): Modifier =
             }
             .border(1.dp, Color.White.copy(alpha = 0.24f), spec.shape)
     }
-    
