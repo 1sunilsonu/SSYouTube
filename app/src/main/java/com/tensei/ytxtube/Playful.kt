@@ -40,25 +40,23 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-
 enum class Flourish {
-
     Pop,
-
     Droop,
-
     Ring,
-
     Drop,
 }
 
-
-
-
-
-
 @Composable
-fun FlourishIcon(icon: ImageVector, description: String?, active: Boolean, kind: Flourish, tint: Color, size: Dp, sparkColor: Color = tint) {
+fun FlourishIcon(
+    icon: ImageVector,
+    description: String?,
+    active: Boolean,
+    kind: Flourish,
+    tint: Color,
+    size: Dp,
+    sparkColor: Color = tint,
+) {
     val reduced = rememberReducedMotion()
     val view = LocalView.current
     val scale = remember { Animatable(1f) }
@@ -67,9 +65,14 @@ fun FlourishIcon(icon: ImageVector, description: String?, active: Boolean, kind:
     val burst = remember { Animatable(1f) }
     val first = remember { booleanArrayOf(true) }
     LaunchedEffect(active) {
-        if (first[0]) { first[0] = false; return@LaunchedEffect }
+        if (first[0]) {
+            first[0] = false
+            return@LaunchedEffect
+        }
         if (!active || reduced) return@LaunchedEffect
-        view.performHapticFeedback(if (kind == Flourish.Droop) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.CONFIRM)
+        view.performHapticFeedback(
+            if (kind == Flourish.Droop) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.CONFIRM,
+        )
         coroutineScope {
             when (kind) {
                 Flourish.Pop -> {
@@ -80,7 +83,10 @@ fun FlourishIcon(icon: ImageVector, description: String?, active: Boolean, kind:
                     launch {
                         rotation.animateTo(0f, keyframes { durationMillis = 520; -22f at 140; 8f at 300; 0f at 520 })
                     }
-                    launch { burst.snapTo(0f); burst.animateTo(1f, tween(520, easing = LinearEasing)) }
+                    launch {
+                        burst.snapTo(0f)
+                        burst.animateTo(1f, tween(520, easing = LinearEasing))
+                    }
                 }
                 Flourish.Droop -> {
                     launch { shift.animateTo(0f, keyframes { durationMillis = 460; 0.22f at 160; -0.05f at 320; 0f at 460 }) }
@@ -89,10 +95,13 @@ fun FlourishIcon(icon: ImageVector, description: String?, active: Boolean, kind:
                 }
                 Flourish.Ring -> {
                     launch {
-                        rotation.animateTo(0f, keyframes {
-                            durationMillis = 720
-                            24f at 80; -22f at 180; 18f at 280; -14f at 380; 9f at 480; -4f at 580; 0f at 720
-                        })
+                        rotation.animateTo(
+                            0f,
+                            keyframes {
+                                durationMillis = 720
+                                24f at 80; -22f at 180; 18f at 280; -14f at 380; 9f at 480; -4f at 580; 0f at 720
+                            },
+                        )
                     }
                     launch { scale.snapTo(0.8f); scale.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium)) }
                 }
@@ -103,34 +112,51 @@ fun FlourishIcon(icon: ImageVector, description: String?, active: Boolean, kind:
             }
         }
     }
-    Box(
-        Modifier.size(size).drawBehind {
+    val burstModifier = if (burst.value < 1f) {
+        Modifier.drawBehind {
             val t = burst.value
-            if (t >= 1f) return@drawBehind
-
             val c = Offset(this.size.width / 2f, this.size.height / 2f)
             val reach = this.size.minDimension * (0.55f + 0.75f * t)
             for (i in 0 until 8) {
                 val a = (i / 8f) * 2f * PI.toFloat() - PI.toFloat() / 2f
                 val p = Offset(c.x + cos(a) * reach, c.y + sin(a) * reach)
-                drawCircle(sparkColor.copy(alpha = (1f - t) * 0.95f), radius = this.size.minDimension * 0.09f * (1f - t * 0.6f), center = p)
+                drawCircle(
+                    sparkColor.copy(alpha = (1f - t) * 0.95f),
+                    radius = this.size.minDimension * 0.09f * (1f - t * 0.6f),
+                    center = p,
+                )
             }
-        },
+        }
+    } else {
+        Modifier
+    }
+    val animating = scale.value != 1f || rotation.value != 0f || shift.value != 0f
+    Box(
+        Modifier.size(size).then(burstModifier),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            icon, description, tint = tint,
-            modifier = Modifier.size(size).graphicsLayer {
-                scaleX = scale.value; scaleY = scale.value
-                rotationZ = rotation.value
-                translationY = shift.value * size.toPx()
-
-                transformOrigin = if (kind == Flourish.Ring) TransformOrigin(0.5f, 0.1f) else TransformOrigin(0.5f, 0.75f)
-            },
+            icon,
+            description,
+            tint = tint,
+            modifier = Modifier
+                .size(size)
+                .then(
+                    if (animating) {
+                        Modifier.graphicsLayer {
+                            scaleX = scale.value
+                            scaleY = scale.value
+                            rotationZ = rotation.value
+                            translationY = shift.value * size.toPx()
+                            transformOrigin = if (kind == Flourish.Ring) TransformOrigin(0.5f, 0.1f) else TransformOrigin(0.5f, 0.75f)
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         )
     }
 }
-
 
 @Composable
 fun RollingText(text: String, color: Color, up: Boolean, fontSize: TextUnit = 14.sp) {
@@ -145,16 +171,25 @@ fun RollingText(text: String, color: Color, up: Boolean, fontSize: TextUnit = 14
     ) { value -> Text(value, color = color, fontWeight = FontWeight.ExtraBold, fontSize = fontSize) }
 }
 
-
 @Composable
 fun Modifier.squishOn(active: Boolean): Modifier {
     val reduced = rememberReducedMotion()
     val s = remember { Animatable(1f) }
     val first = remember { booleanArrayOf(true) }
     LaunchedEffect(active) {
-        if (first[0]) { first[0] = false; return@LaunchedEffect }
+        if (first[0]) {
+            first[0] = false
+            return@LaunchedEffect
+        }
         if (reduced) return@LaunchedEffect
         s.animateTo(1f, keyframes { durationMillis = 420; 0.86f at 90; 1.07f at 240; 1f at 420 })
     }
-    return graphicsLayer { scaleX = s.value; scaleY = s.value }
+    return if (s.value != 1f) {
+        graphicsLayer {
+            scaleX = s.value
+            scaleY = s.value
+        }
+    } else {
+        this
+    }
 }
