@@ -1,5 +1,6 @@
 package com.tensei.ytxtube
 
+import android.content.Context
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.CubicBezierEasing
@@ -28,7 +29,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 
-
 object Motion {
     val Emphasized = CubicBezierEasing(0.2f, 0.9f, 0.2f, 1f)
     val Morph = CubicBezierEasing(0.35f, 0f, 0.15f, 1.12f)
@@ -47,15 +47,24 @@ object Motion {
     const val HoldSpeedMs = 580L
 }
 
+private object ReducedMotionCache {
+    @Volatile
+    private var cached: Boolean? = null
+
+    fun isReduced(context: Context): Boolean {
+        cached?.let { return it }
+        val value = runCatching {
+            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        }.getOrDefault(1f) == 0f
+        cached = value
+        return value
+    }
+}
 
 @Composable
 fun rememberReducedMotion(): Boolean {
     val context = LocalContext.current
-    return remember(context) {
-        runCatching {
-            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-        }.getOrDefault(1f) == 0f
-    }
+    return remember(context) { ReducedMotionCache.isReduced(context) }
 }
 
 /** YouTube-ish blue, visible on light, dark and video surfaces. */
@@ -93,26 +102,38 @@ fun Modifier.pressable(
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier = composed {
+    if (!enabled) return@composed this
     val view = LocalView.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val reduced = rememberReducedMotion()
     val tv = TvMode.isTv
-    val scale by animateFloatAsState(
-        targetValue = if (pressed && !reduced) pressedScale else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 1400f),
-        label = "pressScale",
-    )
-    val layer = this.graphicsLayer { scaleX = scale; scaleY = scale }
+    var wasPressed by remember { mutableStateOf(false) }
+    if (pressed && !wasPressed) wasPressed = true
 
+    val scale = if (wasPressed && !reduced) {
+        val animated by animateFloatAsState(
+            targetValue = if (pressed) pressedScale else 1f,
+            animationSpec = spring(dampingRatio = 0.6f, stiffness = 1400f),
+            label = "pressScale",
+        )
+        animated
+    } else {
+        1f
+    }
 
-    if (!enabled) return@composed layer
+    val layer = if (scale != 1f) {
+        this.graphicsLayer { scaleX = scale; scaleY = scale }
+    } else {
+        this
+    }
+
     layer
         .then(if (tv) Modifier.tvFocusRing() else Modifier)
         .combinedClickable(
             interactionSource = interaction,
             indication = null,
-            enabled = enabled,
+            enabled = true,
             onLongClick = onLongClick?.let { long -> { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); long() } },
             onClick = { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); onClick() },
         )
