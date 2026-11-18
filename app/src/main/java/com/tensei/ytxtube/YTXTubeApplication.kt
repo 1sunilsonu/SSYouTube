@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.tensei.ytxtube.potoken.PoTokenGenerator
 import org.schabi.newpipe.extractor.NewPipe
@@ -27,11 +28,9 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
         PlaybackBandwidth.init(this)
         NewPipe.init(NewPipeDownloader.instance)
 
-
         val poTokenGenerator = PoTokenGenerator()
         poTokenGenerator.initialize()
         YoutubeStreamExtractor.setPoTokenProvider(YtxPoTokenProvider(poTokenGenerator))
-
 
         YoutubeStreamExtractor.setFetchIosClient(true)
         HdrItags.install()
@@ -63,9 +62,20 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
         )
     }
 
-
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        .crossfade(180)
-        .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.25).build() }
+        .crossfade(false)
+        .allowHardware(true)
+        .allowRgb565(true)
+        .memoryCache {
+            MemoryCache.Builder(this)
+                .maxSizePercent(0.30)
+                .build()
+        }
+        .diskCache {
+            DiskCache.Builder()
+                .directory(cacheDir.resolve("image_cache"))
+                .maxSizeBytes(150L * 1024 * 1024)
+                .build()
+        }
         .build()
 }
