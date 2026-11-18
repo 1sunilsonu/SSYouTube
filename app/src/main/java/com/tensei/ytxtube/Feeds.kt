@@ -622,8 +622,10 @@ fun FeedList(
     val c = MaterialTheme.colorScheme
     val listVideos = videos ?: feed.videos
     val scope = rememberCoroutineScope()
-    LaunchedEffect(listVideos, channelAvatarSeed) {
-        ChannelAvatars.resolve(scope, listVideos, channelAvatarSeed)
+    LaunchedEffect(listVideos.size, channelAvatarSeed) {
+        if (listVideos.isNotEmpty()) {
+            ChannelAvatars.resolve(scope, listVideos, channelAvatarSeed)
+        }
     }
     val list = rememberScrollToTop(scrollToTop)
 
@@ -631,17 +633,17 @@ fun FeedList(
         if (feed.generation > 1 || filterScrollKey != null) list.scrollToItem(0)
     }
 
-    LaunchedEffect(list.isScrollInProgress, listVideos) {
+    LaunchedEffect(list.isScrollInProgress) {
         if (!list.isScrollInProgress && listVideos.isNotEmpty()) {
-            delay(350L)
+            delay(900L)
+            if (list.isScrollInProgress) return@delay
             val validIds = listVideos.mapTo(HashSet()) { it.id }
-            val visibleIds = list.layoutInfo.visibleItemsInfo
+            val firstVisibleId = list.layoutInfo.visibleItemsInfo
                 .mapNotNull { it.key as? String }
-                .filter { it in validIds }
-                .take(2)
-            visibleIds.forEach { videoId ->
+                .firstOrNull { it in validIds && StreamCache.get(it) == null }
+            if (firstVisibleId != null) {
                 launch(Dispatchers.IO) {
-                    val info = runCatching { StreamCache.getOrLoad(videoId) }.getOrNull() ?: return@launch
+                    val info = runCatching { StreamCache.getOrLoad(firstVisibleId) }.getOrNull() ?: return@launch
                     val streamUrl = info.videoOnlyStreams.firstOrNull { it.isUrl }?.content
                         ?: info.videoStreams.firstOrNull { it.isUrl }?.content
                         ?: info.audioStreams.firstOrNull { it.isUrl }?.content
@@ -661,19 +663,22 @@ fun FeedList(
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
         LazyColumn(state = list, contentPadding = contentPadding) {
             header()
-            items(listVideos, key = { it.id }) { video ->
+            items(
+                items = listVideos,
+                key = { it.id },
+                contentType = { "video" },
+            ) { video ->
                 VideoCard(
-                    video,
+                    video = video,
                     onClick = {
                         SeenFeedStore.markSeen(listOf(video.id))
                         UserTasteStore.recordWatch(video)
                         onOpen(video)
                     },
-                    modifier = Modifier.animateItem(),
                 )
             }
             when {
-                feed.error != null && listVideos.isEmpty() -> item {
+                feed.error != null && listVideos.isEmpty() -> item(key = "feed_error", contentType = "status") {
                     EmptyState(
                         icon = Icons.Rounded.CloudOff,
                         title = "Couldn't load this",
@@ -681,7 +686,7 @@ fun FeedList(
                         action = { PillButton("Try again", { feed.refresh() }) },
                     )
                 }
-                feed.loading || feed.hasMore -> item {
+                feed.loading || feed.hasMore -> item(key = "feed_loader", contentType = "status") {
                     Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
                         CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
                     }
